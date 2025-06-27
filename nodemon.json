@@ -1,0 +1,14 @@
+{
+    "ignore": [
+      ".git",
+      "node_modules",
+      "build",
+      "public",
+      "uploads"
+    ],
+    "watch": [
+      "./"
+    ],
+    "exec": "npm start",
+    "ext": "js"
+  }

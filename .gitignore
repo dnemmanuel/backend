@@ -1,0 +1,7 @@
+node_modules
+.vscode
+.DS_STORE
+.env
+tmp
+uploads
+.code-workspace
