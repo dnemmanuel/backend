@@ -1,45 +1,46 @@
-import User from '../models/userModel.js'; // CORRECTED: Assuming your model export is 'User'
-import { validationResult } from 'express-validator'; // ADDED: Import validationResult
+import User from '../models/userModel.js'; // Ensure this path and export name are correct
+import { validationResult } from 'express-validator';
+// No need to import bcrypt here, as hashing is handled by the model's pre('save') hook
 
 export const createUser = async (req, res) => {
-  // Validate the request body
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
   try {
-    const { username, password, role, email, firstName, lastName } = req.body; // Added email, firstName, lastName
+    const { username, password, role, email, firstName, lastName } = req.body; 
 
-    // Basic validation (can be enhanced with express-validator middleware on the route)
-    if (!username || !password || !role || !email) { // Email now required
+    if (!username || !password || !role || !email) { 
       return res.status(400).json({ message: 'All required fields (username, password, role, email) are needed.' });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ username }); // CORRECTED: Use User model
+    const existingUser = await User.findOne({ username }); 
     if (existingUser) {
       return res.status(409).json({ message: 'Username already exists.' });
     }
 
     // Password hashing will be handled by the pre('save') hook in userModel.js
-    const newUser = new User({ // CORRECTED: Use User model
+    const newUser = new User({ 
       username,
-      password: password, // CORRECTED: Pass plain password, model hook will hash it
+      password: password, 
       role,
-      email,        // Added
-      firstName,    // Added
-      lastName,     // Added
-      isActive: true, // Default to true
-      lastLogin: null // Default to null
+      email,        
+      firstName,    
+      lastName,     
+      isActive: true, 
+      lastLogin: null 
     });
 
     const savedUser = await newUser.save(); // Hashing happens here via pre('save') hook
-    // Exclude password from the response
     const { password: _, ...rest } = savedUser.toJSON();
-    res.status(201).json({ message: 'User created successfully', user: rest }); // Added user object to response
+    res.status(201).json({ message: 'User created successfully', user: rest }); 
   } catch (error) {
     console.error('Error creating user:', error);
+    if (error.name === 'ValidationError') {
+      console.error('Mongoose Validation Error Details:', error.errors);
+      return res.status(400).json({ message: error.message, details: error.errors });
+    }
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -47,7 +48,7 @@ export const createUser = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await User.find().select('-password'); // CORRECTED: Use User model
+    const users = await User.find().select('-password'); 
     res.json(users);
   } catch (error) {
     console.error("Error getting all users:", error);
@@ -57,7 +58,7 @@ export const getAllUsers = async (req, res) => {
 
 export const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password'); // CORRECTED: Use User model
+    const user = await User.findById(req.params.id).select('-password'); 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -69,55 +70,88 @@ export const getUserById = async (req, res) => {
 };
 
 export const updateUser = async (req, res) => {
-  // Validate the request body
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
   try {
-    const { username, role, email, firstName, lastName, isActive } = req.body; // Added fields
+    // Destructure password from req.body as well
+    const { username, role, email, firstName, lastName, isActive, password } = req.body;
     const userId = req.params.id;
 
-    // Check if the username is already taken by another user
-    const existingUserWithUsername = await User.findOne({ username }); // CORRECTED: Use User model
-    if (existingUserWithUsername && existingUserWithUsername._id.toString() !== userId) {
-      return res.status(400).json({ message: "Username already taken" });
-    }
-
-    // Check if the email is already taken by another user
-    const existingUserWithEmail = await User.findOne({ email }); // CORRECTED: Use User model
-    if (existingUserWithEmail && existingUserWithEmail._id.toString() !== userId) {
-      return res.status(400).json({ message: "Email already taken" });
-    }
-
-    // Build update object dynamically
-    const updateFields = { username, role, email, firstName, lastName, isActive };
-
-    const updatedUser = await User.findByIdAndUpdate( // CORRECTED: Use User model
-      userId,
-      updateFields,
-      { new: true, runValidators: true } // 'new: true' returns the updated document, 'runValidators' runs schema validators
-    ).select('-password'); // CORRECTED: Exclude password from response
-
-    if (!updatedUser) {
+    // Find the user by ID first
+    const user = await User.findById(userId);
+    if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json({ message: 'User updated successfully', user: updatedUser }); // Added user object to response
+
+    // Check if the username is already taken by another user (excluding the current user)
+    const existingUserWithUsername = await User.findOne({ username, _id: { $ne: userId } }); 
+    if (existingUserWithUsername) {
+      return res.status(400).json({ message: "Username already taken by another user." });
+    }
+
+    // Check if the email is already taken by another user (excluding the current user)
+    const existingUserWithEmail = await User.findOne({ email, _id: { $ne: userId } }); 
+    if (existingUserWithEmail) {
+      return res.status(400).json({ message: "Email already taken by another user." });
+    }
+
+    // Update user fields directly on the Mongoose document
+    user.username = username;
+    user.role = role;
+    user.email = email;
+    user.firstName = firstName;
+    user.lastName = lastName;
+    user.isActive = isActive;
+
+    // Handle password update ONLY if a new password is provided in the request body
+    // If a password is provided, assign it. The pre('save') hook in userModel.js
+    // will automatically hash it before saving.
+    if (password) {
+      user.password = password;
+    }
+
+    // Save the user document. This will trigger the pre('save') hook for password hashing
+    // if user.password was modified.
+    const updatedUser = await user.save({ validateBeforeSave: true }); 
+    
+    // Exclude password from the response
+    const { password: _, ...rest } = updatedUser.toJSON();
+    res.json({ message: 'User updated successfully', user: rest }); 
   } catch (error) {
     console.error("Error updating user:", error);
+    if (error.name === 'ValidationError') {
+      console.error('Mongoose Validation Error Details:', error.errors);
+      return res.status(400).json({ message: error.message, details: error.errors });
+    }
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const deleteUser = async (req, res) => {
   try {
-    const userId = req.params.id; // Get ID from params
-    const deletedUser = await User.findByIdAndDelete(userId); // CORRECTED: Use User model, renamed variable
-    if (!deletedUser) {
-      return res.status(404).json({ message: "User not found" });
+    const userIdToDelete = req.params.id; 
+
+    const userToDelete = await User.findById(userIdToDelete);
+    if (!userToDelete) {
+      return res.status(404).json({ message: 'User not found' });
     }
-    res.json({ message: "User deleted successfully" });
+
+    if (userToDelete.role === 's-admin') { // Using 's-admin' as per enum
+      const superAdminsCount = await User.countDocuments({ role: 's-admin' });
+      if (superAdminsCount <= 1) {
+        return res.status(403).json({ message: 'Cannot delete the last super-admin user. At least one super-admin must remain.' });
+      }
+    }
+
+    const deletedUser = await User.findByIdAndDelete(userIdToDelete); 
+    if (!deletedUser) {
+      return res.status(404).json({ message: 'User not found after check.' });
+    }
+
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error("Error deleting user:", error);
     res.status(500).json({ message: "Internal server error" });
