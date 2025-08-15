@@ -6,6 +6,7 @@ import { connectDB } from "./database/connect.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import roleRoutes from "./routes/roleRoutes.js";
+import securityRequestRoutes from "./routes/securityRequestRoutes.js"; // Ensure this is imported
 import permissionRoutes from "./routes/permissionRoutes.js";
 import { createUser } from "./controllers/userController.js";
 import { Env } from "./helpers/env.js";
@@ -36,10 +37,10 @@ connectDB()
 
     // custom middlewares
 
-    // Register routes here
+    // Register ALL specific API routes FIRST.
+    // Requests for /auth, /api, /users, /roles, /permissions will be handled here.
     app.use("/auth", authRoutes);
-    //  Define user creation route *before* applying the middleware
-    app.post("/users/create", createUser);
+    app.post("/users/create", createUser); // Specific user creation route
     app.use("/users", verifyToken, authorise(["s-admin"]), userRoutes);
     app.use("/roles", verifyToken, authorise(["s-admin"]), roleRoutes);
     app.use(
@@ -48,7 +49,17 @@ connectDB()
       authorise(["s-admin"]),
       permissionRoutes
     );
+    // CRITICAL FIX: Add the missing securityRequestRoutes here!
+    app.use(
+      "/api",
+      verifyToken,
+      authorise(["admin", "s-admin"]),
+      securityRequestRoutes
+    );
 
+    // This catch-all route MUST be the ABSOLUTE LAST route defined
+    // before the app.listen() call. It will only be hit if no
+    // other specific API routes above it have matched the request.
     app.use("/", (req, res) => {
       res.json("🚀🚀");
     });
