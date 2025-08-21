@@ -6,6 +6,7 @@ import {
   getSecurityRequests,
   updateSecurityRequestStatus,
   getSecurityRequestById,
+  deleteSecurityRequest,
 } from "../controllers/securityRequestController.js";
 
 const router = express.Router();
@@ -35,6 +36,13 @@ router.get(
   verifyToken,
   authorise(["admin", "s-admin"]),
   getSecurityRequestById
+);
+
+router.delete(
+  "/security-requests/delete/:id",
+  verifyToken,
+  authorise(["admin", "s-admin"]),
+  deleteSecurityRequest
 );
 
 export default router;

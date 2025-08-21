@@ -49,17 +49,14 @@ connectDB()
       authorise(["s-admin"]),
       permissionRoutes
     );
-    // CRITICAL FIX: Add the missing securityRequestRoutes here!
+    
     app.use(
       "/api",
       verifyToken,
-      authorise(["admin", "s-admin"]),
+      // authorise(["admin", "s-admin", "lvl-1"]),
       securityRequestRoutes
     );
 
-    // This catch-all route MUST be the ABSOLUTE LAST route defined
-    // before the app.listen() call. It will only be hit if no
-    // other specific API routes above it have matched the request.
     app.use("/", (req, res) => {
       res.json("🚀🚀");
     });

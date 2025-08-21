@@ -51,71 +51,27 @@ const securityRequestSchema = new Schema(
     },
     // Email Security Requests
     emailSecurity: {
-      requestedEmail: {
-        type: String,
-        trim: true,
-        lowercase: true,
-        match: /^\S+@\S+\.\S+$/,
-      },
-      existingEmail: {
-        type: String,
-        trim: true,
-        lowercase: true,
-        match: /^\S+@\S+\.\S+$/,
-      },
-      createEmailAccount: { type: String }, // Could be a boolean if just a flag
-      resetEmailPassword: {
-        type: String,
-        trim: true,
-        lowercase: true,
-        match: /^\S+@\S+\.\S+$/,
-      },
-      unlockEmailAccount: {
-        type: String,
-        trim: true,
-        lowercase: true,
-        match: /^\S+@\S+\.\S+$/,
-      },
+      requestedEmail: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+      existingEmail: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+      // 👇 These MUST be Boolean types for checkboxes
+      createEmailAccount: { type: Boolean, default: false },
+      resetEmailPassword: { type: Boolean, default: false },
+      unlockEmailAccount: { type: Boolean, default: false },
       requestAlias: {
-        existingEmail: {
-          type: String,
-          trim: true,
-          lowercase: true,
-          match: /^\S+@\S+\.\S+$/,
-        },
-        alias: {
-          type: String,
-          trim: true,
-          lowercase: true,
-          match: /^\S+@\S+\.\S+$/,
-        },
+        existingEmail: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+        alias: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
       },
       requestForwarding: {
-        from: {
-          type: String,
-          trim: true,
-          lowercase: true,
-          match: /^\S+@\S+\.\S+$/,
-        },
-        to: {
-          type: String,
-          trim: true,
-          lowercase: true,
-          match: /^\S+@\S+\.\S+$/,
-        },
+        from: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+        to: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
       },
       addToList: { type: String, trim: true },
       removeFromList: { type: String, trim: true },
-      closeEmail: {
-        type: String,
-        trim: true,
-        lowercase: true,
-        match: /^\S+@\S+\.\S+$/,
-      },
+      closeEmail: { type: Boolean, default: false }, // 👇 This one too
       addToGroup: { type: String, trim: true },
-      removeFromGroup: [{ type: String, trim: true }], // Array of strings
-      modifyAccount: [{ type: String, trim: true }], // Array of strings
-      createDistributionList: [{ type: String, trim: true }], // Array of strings
+      removeFromGroup: [{ type: String, trim: true }],
+      modifyAccount: [{ type: String, trim: true }],
+      createDistributionList: [{ type: String, trim: true }],
     },
     // Network Security Requests
     networkSecurity: {

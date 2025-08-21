@@ -131,3 +131,25 @@ export const getSecurityRequestById = async (req, res) => {
     res.status(500).json({ message: 'Internal server error while fetching request by ID.' });
   }
 };
+
+export const deleteSecurityRequest = async (req, res) => {
+  try {
+    const { id } = req.params; // Get the request ID from the URL parameters
+
+    const deletedRequest = await SecurityRequest.findByIdAndDelete(id);
+
+    if (!deletedRequest) {
+      return res.status(404).json({ message: 'Security request not found.' });
+    }
+
+    console.log(`Backend: Deleted request with ID: ${id}.`);
+    res.status(200).json({ message: 'Security request deleted successfully!' });
+  } catch (error) {
+    console.error('Backend: Error deleting security request:', error);
+    // Handle invalid ID format
+    if (error.kind === 'ObjectId') {
+        return res.status(400).json({ message: 'Invalid request ID format.' });
+    }
+    res.status(500).json({ message: 'Internal server error while deleting request.' });
+  }
+};
