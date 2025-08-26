@@ -1,34 +1,41 @@
-import appAdmin from '../models/userModel.js';
+import User from '../models/userModel.js'; // Assuming you import your User model
 import bcrypt from 'bcrypt';
-import { generateToken } from '../helpers/jwt.js'
+import { generateToken } from '../helpers/jwt.js';
 
 export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Find the admin user by username
-    const adminUser = await appAdmin.findOne({ username }).select('+password');
-    console.log(adminUser)
+    // Find the user by username, and select the password
+    const appUser = await User.findOne({ username }).select('+password');
 
-    if (!adminUser) {
+    if (!appUser) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Compare the provided password with the hashed password in the database
-    const isPasswordValid = await bcrypt.compare(password, adminUser.password);
+    const isPasswordValid = await bcrypt.compare(password, appUser.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Payload for JWT
     const payload = {
-      _id: adminUser._id,
-      username: adminUser.username,
-      role: adminUser.role,
+      _id: appUser._id,
+      username: appUser.username,
+      role: appUser.role,
     };
     const token = generateToken(payload);
 
-    res.json({ message: 'Login successful', token: token });
+    // --- CRITICAL CHANGE HERE: Include role and _id in the response ---
+    res.json({
+      message: 'Login successful',
+      token: token,
+      role: appUser.role, // Include the user's role
+      _id: appUser._id,   // Include the user's ID
+    });
+
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Internal server error' });
