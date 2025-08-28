@@ -49,6 +49,12 @@ const userSchema = new Schema(
       trim: true,
       maxlength: 50,
     },
+    ministry: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 50,
+    },
     isActive: {
       //Added isActive
       type: Boolean,

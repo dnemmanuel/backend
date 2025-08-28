@@ -41,7 +41,7 @@ connectDB()
     // Requests for /auth, /api, /users, /roles, /permissions will be handled here.
     app.use("/auth", authRoutes);
     app.post("/users/create", createUser); // Specific user creation route
-    app.use("/users", verifyToken, authorise(["s-admin"]), userRoutes);
+    app.use("/users", verifyToken, authorise(["s-admin", "lvl-2"]), userRoutes);
     app.use("/roles", verifyToken, authorise(["s-admin"]), roleRoutes);
     app.use(
       "/permissions",
@@ -49,7 +49,7 @@ connectDB()
       authorise(["s-admin"]),
       permissionRoutes
     );
-    
+
     app.use(
       "/api",
       verifyToken,

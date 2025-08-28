@@ -17,7 +17,7 @@ router.post("/security-requests", verifyToken, submitSecurityRequest);
 // Route for getting all security requests
 router.get(
   "/security-requests",
-  authorise(["admin", "s-admin"]),
+  authorise(["admin", "s-admin", "lvl-2"]),
   verifyToken,
   getSecurityRequests
 );
@@ -34,7 +34,7 @@ router.patch(
 router.get(
   "/security-requests/:id",
   verifyToken,
-  authorise(["admin", "s-admin"]),
+  authorise(["admin", "s-admin", "lvl-2"]),
   getSecurityRequestById
 );
 
