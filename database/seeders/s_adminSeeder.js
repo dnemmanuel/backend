@@ -17,6 +17,7 @@ export async function seedSuperAdminUser() {
         email: 'dinnelemmanuel@gmail.com',
         firstName: 'Dinnel',
         lastName: 'Emmanuel',
+        ministry: "Government IT Services"
       });
       await newAdmin.save();
       console.log('Initial admin user created');

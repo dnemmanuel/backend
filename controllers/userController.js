@@ -1,6 +1,6 @@
-import User from "../models/userModel.js"; // Ensure this path and export name are correct
+import User from "../models/userModel.js";
 import { validationResult } from "express-validator";
-// No need to import bcrypt here, as hashing is handled by the model's pre('save') hook
+import { logSystemEvent } from "./systemEventController.js"; // Import the logger
 
 export const createUser = async (req, res) => {
   const errors = validationResult(req);
@@ -9,8 +9,7 @@ export const createUser = async (req, res) => {
   }
 
   try {
-    const { username, password, role, email, firstName, lastName, ministry } =
-      req.body;
+    const { username, password, role, email, firstName, lastName } = req.body;
 
     if (!username || !password || !role || !email) {
       return res.status(400).json({
@@ -24,7 +23,6 @@ export const createUser = async (req, res) => {
       return res.status(409).json({ message: "Username already exists." });
     }
 
-    // Password hashing will be handled by the pre('save') hook in userModel.js
     const newUser = new User({
       username,
       password: password,
@@ -32,12 +30,31 @@ export const createUser = async (req, res) => {
       email,
       firstName,
       lastName,
-      ministry,
       isActive: true,
       lastLogin: null,
+      ministry: req.body.ministry || "Default Ministry", // Ensure ministry is set or default
     });
 
-    const savedUser = await newUser.save(); // Hashing happens here via pre('save') hook
+    const savedUser = await newUser.save();
+
+    // Log the system event after successful user creation
+    // Assuming req.user is populated by your verifyToken middleware
+    const performedBy = req.user ? req.user._id : null; // Get ID of the user performing the action
+    const performedByName = req.user ? req.user.username : "Unknown"; // Get username of the user performing the action
+    const action = `Created new user: ${savedUser.username} with role ${savedUser.role}`;
+
+    // --- DEBUGGING LOGS START ---
+    console.log(
+      "--- Inside userController.js createUser (after user saved) ---"
+    );
+    console.log("Calling logSystemEvent with:");
+    console.log("  performedBy:", performedBy);
+    console.log("  performedByName:", performedByName);
+    console.log("  action:", action);
+    // --- DEBUGGING LOGS END ---
+
+    logSystemEvent(performedBy, performedByName, action);
+
     const { password: _, ...rest } = savedUser.toJSON();
     res.status(201).json({ message: "User created successfully", user: rest });
   } catch (error) {
@@ -52,98 +69,47 @@ export const createUser = async (req, res) => {
   }
 };
 
-export const getAllUsers = async (req, res) => {
-  try {
-    const users = await User.find().select("-password");
-    res.json(users);
-  } catch (error) {
-    console.error("Error getting all users:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-export const getUserById = async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id).select("-password");
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    res.json(user);
-  } catch (error) {
-    console.error("Error getting user by ID:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
 export const updateUser = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
   try {
-    // Destructure password from req.body as well
-    const {
-      username,
-      role,
-      email,
-      firstName,
-      lastName,
-      isActive,
-      password,
-      ministry,
-    } = req.body;
-    const userId = req.params.id;
+    const userIdToUpdate = req.params.id;
+    const updates = req.body;
 
-    // Find the user by ID first
-    const user = await User.findById(userId);
-    if (!user) {
+    // Optional: Prevent changing roles to s-admin if not s-admin themselves
+    if (
+      updates.role &&
+      updates.role === "s-admin" &&
+      req.user.role !== "s-admin"
+    ) {
+      return res.status(403).json({
+        message: "Only super-admins can assign the super-admin role.",
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(userIdToUpdate, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Check if the username is already taken by another user (excluding the current user)
-    const existingUserWithUsername = await User.findOne({
-      username,
-      _id: { $ne: userId },
-    });
-    if (existingUserWithUsername) {
-      return res
-        .status(400)
-        .json({ message: "Username already taken by another user." });
-    }
+     // Log the system event after successful user creation
+    // Assuming req.user is populated by your verifyToken middleware
+    const performedBy = req.user ? req.user._id : null; // Get ID of the user performing the action
+    const performedByName = req.user ? req.user.username : "Unknown"; // Get username of the user performing the action
+    const action = `Created new user: ${updatedUser.username} with role ${updatedUser.role}`;
 
-    // Check if the email is already taken by another user (excluding the current user)
-    const existingUserWithEmail = await User.findOne({
-      email,
-      _id: { $ne: userId },
-    });
-    if (existingUserWithEmail) {
-      return res
-        .status(400)
-        .json({ message: "Email already taken by another user." });
-    }
+    // --- DEBUGGING LOGS START ---
+    console.log(
+      "--- Inside userController.js updateUser (after user updated) ---"
+    );
+    console.log("Calling logSystemEvent with:");
+    console.log("  performedBy:", performedBy);
+    console.log("  performedByName:", performedByName);
+    console.log("  action:", action);
+    // --- DEBUGGING LOGS END ---
 
-    // Update user fields directly on the Mongoose document
-    user.username = username;
-    user.role = role;
-    user.email = email;
-    user.firstName = firstName;
-    user.lastName = lastName;
-    user.ministry = ministry;
-    user.isActive = isActive;
-
-    // Handle password update ONLY if a new password is provided in the request body
-    // If a password is provided, assign it. The pre('save') hook in userModel.js
-    // will automatically hash it before saving.
-    if (password) {
-      user.password = password;
-    }
-
-    // Save the user document. This will trigger the pre('save') hook for password hashing
-    // if user.password was modified.
-    const updatedUser = await user.save({ validateBeforeSave: true });
-
-    // Exclude password from the response
     const { password: _, ...rest } = updatedUser.toJSON();
     res.json({ message: "User updated successfully", user: rest });
   } catch (error) {
@@ -168,7 +134,6 @@ export const deleteUser = async (req, res) => {
     }
 
     if (userToDelete.role === "s-admin") {
-      // Using 's-admin' as per enum
       const superAdminsCount = await User.countDocuments({ role: "s-admin" });
       if (superAdminsCount <= 1) {
         return res.status(403).json({
@@ -180,12 +145,55 @@ export const deleteUser = async (req, res) => {
 
     const deletedUser = await User.findByIdAndDelete(userIdToDelete);
     if (!deletedUser) {
-      return res.status(404).json({ message: "User not found after check." });
+      return res.status(404).json({
+        message: "User not found after check (possible race condition).",
+      });
     }
 
-    res.json({ message: "User deleted successfully" });
+    const performedBy = req.user ? req.user.id : null;
+    const performedByName = req.user ? req.user.username : "Unknown";
+    const action = `Deleted user: ${deletedUser.username} with role ${deletedUser.role}`;
+    logSystemEvent(performedBy, performedByName, action);
+
+    res.json({
+      message: "User deleted successfully",
+      user: deletedUser.username,
+    });
   } catch (error) {
     console.error("Error deleting user:", error);
+    if (error.name === "ValidationError") {
+      console.error("Mongoose Validation Error Details:", error.errors);
+      return res
+        .status(400)
+        .json({ message: error.message, details: error.errors });
+    }
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find().select("-password"); // Exclude password from results
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Error fetching all users:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to fetch users", error: error.message });
+  }
+};
+
+export const getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password"); // Exclude password
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json(user);
+  } catch (error) {
+    console.error("Error fetching user by ID:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to fetch user", error: error.message });
   }
 };

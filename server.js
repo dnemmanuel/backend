@@ -3,15 +3,24 @@ import express from "express";
 import cors from "cors";
 import compression from "compression";
 import { connectDB } from "./database/connect.js";
-import authRoutes from "./routes/authRoutes.js";
-import userRoutes from "./routes/userRoutes.js";
-import roleRoutes from "./routes/roleRoutes.js";
-import securityRequestRoutes from "./routes/securityRequestRoutes.js"; // Ensure this is imported
-import permissionRoutes from "./routes/permissionRoutes.js";
-import { createUser } from "./controllers/userController.js";
 import { Env } from "./helpers/env.js";
 import { authorise, verifyToken } from "./middlewares/authMiddleware.js";
 import { seedSuperAdminUser } from "./database/seeders/s_adminSeeder.js";
+
+// --- IMPORTANT: Load ALL Mongoose models FIRST to ensure schemas are registered ---
+// Importing models/index.js here ensures all model schemas are registered with Mongoose
+// before any other part of the application attempts to use them.
+import * as models from "./models/index.js";
+// --- END IMPORTANT ---
+
+// Now import controllers and routes that use these models
+import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import roleRoutes from "./routes/roleRoutes.js";
+import securityRequestRoutes from "./routes/securityRequestRoutes.js";
+import permissionRoutes from "./routes/permissionRoutes.js";
+import { createUser } from "./controllers/userController.js";
+import { getSystemEvents } from "./controllers/systemEventController.js"; // Import getSystemEvents
 
 // --- ADD THIS LINE FOR DEBUGGING ---
 console.log(
@@ -38,9 +47,10 @@ connectDB()
     // custom middlewares
 
     // Register ALL specific API routes FIRST.
-    // Requests for /auth, /api, /users, /roles, /permissions will be handled here.
     app.use("/auth", authRoutes);
-    app.post("/users/create", createUser); // Specific user creation route
+    // The createUser route should be handled before the general /users route if it's publicly accessible
+    app.post("/users/create", createUser);
+    // User routes requiring token and authorization
     app.use("/users", verifyToken, authorise(["s-admin", "lvl-2"]), userRoutes);
     app.use("/roles", verifyToken, authorise(["s-admin"]), roleRoutes);
     app.use(
@@ -50,10 +60,21 @@ connectDB()
       permissionRoutes
     );
 
+    // Route for fetching system events
+    // Ensure this route has appropriate authentication and authorization
+    app.get(
+      "/api/system-events",
+      verifyToken,
+      authorise(["s-admin", "admin"]),
+      getSystemEvents
+    );
+
+    // General /api routes
+    // Ensure more specific routes come before broader ones if using the same prefix
     app.use(
       "/api",
       verifyToken,
-      // authorise(["admin", "s-admin", "lvl-1"]),
+      // authorise(["admin", "s-admin", "lvl-1"]), // Uncomment and adjust as needed
       securityRequestRoutes
     );
 
@@ -62,11 +83,9 @@ connectDB()
     });
 
     const PORT = Env.get("PORT", 3000);
-    app.listen(PORT, () => {
-      console.log("Server listening on port " + PORT);
-    });
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
-  .catch((err) => {
-    console.error(err);
+  .catch((error) => {
+    console.error("Failed to connect to MongoDB:", error);
     process.exit(1);
   });

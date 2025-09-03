@@ -1,4 +1,5 @@
 import SecurityRequest from "../models/securityRequestModel.js";
+import { sendEmail } from "../utils/emailService.js";
 
 export const submitSecurityRequest = async (req, res) => {
   try {
@@ -22,6 +23,20 @@ export const submitSecurityRequest = async (req, res) => {
     );
 
     const savedRequest = await newRequest.save();
+
+    // After successfully saving the form, send an email to the requestor.
+    // const requestorEmail = req.body.requestorInfo.existingEmail;
+    const sendTo = 'dinnel.emmanuel@govt.lc'
+    const subject = "Security Request Submitted: Reference " + newRequest._id;
+    const htmlBody = `
+      <h1>Security Request Submission</h1>
+      <p>Dear ${req.body.requestorInfo.firstName},</p>
+      <p>Your security request has been successfully submitted and is pending review. The reference number is: <strong>${newRequest._id}</strong>.</p>
+      <p>We will notify you once the status of your request has been updated.</p>
+      <p>Best regards,<br>The Security Team</p>
+    `;
+
+    await sendEmail(sendTo, subject, htmlBody);
 
     console.log(
       "Backend: Mongoose savedRequest instance after save:",
@@ -117,18 +132,20 @@ export const getSecurityRequestById = async (req, res) => {
     const request = await SecurityRequest.findById(id);
 
     if (!request) {
-      return res.status(404).json({ message: 'Security request not found.' });
+      return res.status(404).json({ message: "Security request not found." });
     }
 
     console.log(`Backend: Fetched request with ID: ${id}.`);
     res.status(200).json(request);
   } catch (error) {
-    console.error('Backend: Error fetching security request by ID:', error);
+    console.error("Backend: Error fetching security request by ID:", error);
     // Handle invalid ID format (e.g., if it's not a valid MongoDB ObjectId string)
-    if (error.kind === 'ObjectId') {
-        return res.status(400).json({ message: 'Invalid request ID format.' });
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid request ID format." });
     }
-    res.status(500).json({ message: 'Internal server error while fetching request by ID.' });
+    res
+      .status(500)
+      .json({ message: "Internal server error while fetching request by ID." });
   }
 };
 
@@ -139,17 +156,19 @@ export const deleteSecurityRequest = async (req, res) => {
     const deletedRequest = await SecurityRequest.findByIdAndDelete(id);
 
     if (!deletedRequest) {
-      return res.status(404).json({ message: 'Security request not found.' });
+      return res.status(404).json({ message: "Security request not found." });
     }
 
     console.log(`Backend: Deleted request with ID: ${id}.`);
-    res.status(200).json({ message: 'Security request deleted successfully!' });
+    res.status(200).json({ message: "Security request deleted successfully!" });
   } catch (error) {
-    console.error('Backend: Error deleting security request:', error);
+    console.error("Backend: Error deleting security request:", error);
     // Handle invalid ID format
-    if (error.kind === 'ObjectId') {
-        return res.status(400).json({ message: 'Invalid request ID format.' });
+    if (error.kind === "ObjectId") {
+      return res.status(400).json({ message: "Invalid request ID format." });
     }
-    res.status(500).json({ message: 'Internal server error while deleting request.' });
+    res
+      .status(500)
+      .json({ message: "Internal server error while deleting request." });
   }
 };

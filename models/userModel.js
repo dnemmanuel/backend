@@ -24,61 +24,63 @@ const userSchema = new Schema(
       default: "admin",
     },
     email: {
-      // Added email
       type: String,
       required: true,
       unique: true,
       trim: true,
       lowercase: true,
       validate: {
-        validator: validator.isEmail, // Use validator.isEmail
+        validator: validator.isEmail,
         message: "Invalid email address",
       },
     },
     firstName: {
-      // Added firstName
       type: String,
       required: true,
       trim: true,
       maxlength: 50,
     },
     lastName: {
-      // Added lastName
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 50,
-    },
-    ministry: {
       type: String,
       required: true,
       trim: true,
       maxlength: 50,
     },
     isActive: {
-      //Added isActive
       type: Boolean,
       default: true,
     },
     lastLogin: {
-      // Added lastLogin
       type: Date,
     },
+    ministry: {
+      type: String,
+      trim: true,
+      required: [true, "Ministry is required for the user"],
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-// Hash the password before saving
+// Pre-save hook to hash password
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+  if (!this.isModified("password")) {
+    return next();
+  }
   try {
-    this.password = await bcrypt.hash(this.password, 10);
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
     next();
-  } catch (err) {
-    return next(err);
+  } catch (error) {
+    next(error);
   }
 });
 
-const user = model("user", userSchema);
+// Method to compare passwords
+userSchema.methods.comparePassword = async function (candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
 
-export default user;
+export default model("User", userSchema);
