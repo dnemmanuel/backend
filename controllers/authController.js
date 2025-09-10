@@ -25,6 +25,7 @@ export const login = async (req, res) => {
       _id: appUser._id,
       username: appUser.username,
       role: appUser.role,
+      ministry: appUser.ministry,
     };
     const token = generateToken(payload);
 

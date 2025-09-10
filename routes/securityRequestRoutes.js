@@ -1,6 +1,7 @@
+// securityRequestRoutes.js
+
 import express from "express";
-// Ensure verifyToken and authorise are imported
-import { verifyToken, authorise } from "../middlewares/authMiddleware.js"; // Assuming this path
+import { verifyToken, authorise } from "../middlewares/authMiddleware.js";
 import {
   submitSecurityRequest,
   getSecurityRequests,
@@ -14,11 +15,11 @@ const router = express.Router();
 // Route for submitting new security requests
 router.post("/security-requests", verifyToken, submitSecurityRequest);
 
-// Route for getting all security requests
+// Correct order: verifyToken before authorise
 router.get(
   "/security-requests",
-  authorise(["admin", "s-admin", "lvl-2"]),
-  verifyToken,
+  verifyToken, // Moved to the correct position
+  authorise(["admin", "s-admin", "lvl-2", "lvl-3", "HCM-Officer"]),
   getSecurityRequests
 );
 
@@ -26,7 +27,7 @@ router.get(
 router.patch(
   "/security-requests/:id/status",
   verifyToken,
-  authorise(["admin", "s-admin"]),
+  authorise(["admin", "s-admin", "lvl-2", "lvl-3", "HCM-Officer"]),
   updateSecurityRequestStatus
 );
 
@@ -34,7 +35,7 @@ router.patch(
 router.get(
   "/security-requests/:id",
   verifyToken,
-  authorise(["admin", "s-admin", "lvl-2"]),
+  authorise(["admin", "s-admin", "lvl-2", "lvl-3", "HCM-Officer"]),
   getSecurityRequestById
 );
 

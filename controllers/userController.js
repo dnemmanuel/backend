@@ -37,21 +37,10 @@ export const createUser = async (req, res) => {
 
     const savedUser = await newUser.save();
 
-    // Log the system event after successful user creation
-    // Assuming req.user is populated by your verifyToken middleware
-    const performedBy = req.user ? req.user._id : null; // Get ID of the user performing the action
-    const performedByName = req.user ? req.user.username : "Unknown"; // Get username of the user performing the action
-    const action = `Created new user: ${savedUser.username} with role ${savedUser.role}`;
-
-    // --- DEBUGGING LOGS START ---
-    console.log(
-      "--- Inside userController.js createUser (after user saved) ---"
-    );
-    console.log("Calling logSystemEvent with:");
-    console.log("  performedBy:", performedBy);
-    console.log("  performedByName:", performedByName);
-    console.log("  action:", action);
-    // --- DEBUGGING LOGS END ---
+    // Correctly log the system event after the user has been saved
+    const performedBy = req.user ? req.user._id : null;
+    const performedByName = req.user ? req.user.username : "Unknown";
+    const action = `Created user: ${savedUser.username} with role ${savedUser.role}`;
 
     logSystemEvent(performedBy, performedByName, action);
 
@@ -94,21 +83,12 @@ export const updateUser = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-     // Log the system event after successful user creation
-    // Assuming req.user is populated by your verifyToken middleware
-    const performedBy = req.user ? req.user._id : null; // Get ID of the user performing the action
-    const performedByName = req.user ? req.user.username : "Unknown"; // Get username of the user performing the action
-    const action = `Created new user: ${updatedUser.username} with role ${updatedUser.role}`;
+    // Correctly log the system event after the user has been updated
+    const performedBy = req.user ? req.user._id : null;
+    const performedByName = req.user ? req.user.username : "Unknown";
+    const action = `Updated user: ${updatedUser.username} with role ${updatedUser.role}`;
 
-    // --- DEBUGGING LOGS START ---
-    console.log(
-      "--- Inside userController.js updateUser (after user updated) ---"
-    );
-    console.log("Calling logSystemEvent with:");
-    console.log("  performedBy:", performedBy);
-    console.log("  performedByName:", performedByName);
-    console.log("  action:", action);
-    // --- DEBUGGING LOGS END ---
+    logSystemEvent(performedBy, performedByName, action);
 
     const { password: _, ...rest } = updatedUser.toJSON();
     res.json({ message: "User updated successfully", user: rest });
@@ -144,15 +124,18 @@ export const deleteUser = async (req, res) => {
     }
 
     const deletedUser = await User.findByIdAndDelete(userIdToDelete);
+
     if (!deletedUser) {
       return res.status(404).json({
         message: "User not found after check (possible race condition).",
       });
     }
 
-    const performedBy = req.user ? req.user.id : null;
+    // Correctly log the system event after the user has been deleted
+    const performedBy = req.user ? req.user._id : null;
     const performedByName = req.user ? req.user.username : "Unknown";
     const action = `Deleted user: ${deletedUser.username} with role ${deletedUser.role}`;
+
     logSystemEvent(performedBy, performedByName, action);
 
     res.json({

@@ -1,5 +1,4 @@
 import SecurityRequest from "../models/securityRequestModel.js";
-import { sendEmail } from "../utils/emailService.js";
 
 export const submitSecurityRequest = async (req, res) => {
   try {
@@ -11,7 +10,7 @@ export const submitSecurityRequest = async (req, res) => {
     );
 
     const newRequest = new SecurityRequest({
-      status: status || "Pending Review",
+      status: status || "Pending HOD Review",
       submittedByUserId: req.user ? req.user.id : null, // Set submittedByUserId from req.user (authenticated user)
       submissionDate: submissionDate || Date.now(),
       ...formData,
@@ -23,20 +22,6 @@ export const submitSecurityRequest = async (req, res) => {
     );
 
     const savedRequest = await newRequest.save();
-
-    // After successfully saving the form, send an email to the requestor.
-    // const requestorEmail = req.body.requestorInfo.existingEmail;
-    const sendTo = 'dinnel.emmanuel@govt.lc'
-    const subject = "Security Request Submitted: Reference " + newRequest._id;
-    const htmlBody = `
-      <h1>Security Request Submission</h1>
-      <p>Dear ${req.body.requestorInfo.firstName},</p>
-      <p>Your security request has been successfully submitted and is pending review. The reference number is: <strong>${newRequest._id}</strong>.</p>
-      <p>We will notify you once the status of your request has been updated.</p>
-      <p>Best regards,<br>The Security Team</p>
-    `;
-
-    await sendEmail(sendTo, subject, htmlBody);
 
     console.log(
       "Backend: Mongoose savedRequest instance after save:",
@@ -59,24 +44,40 @@ export const submitSecurityRequest = async (req, res) => {
       .json({ message: "Internal server error during submission." });
   }
 };
-// Controller to get all security requests
+
+
 export const getSecurityRequests = async (req, res) => {
   try {
-    // Find all security requests in the database
-    const requests = await SecurityRequest.find({}); // Find all documents
+    const userRole = req.user.role;
+    const userMinistry = req.user.ministry;
+    let requests;
+    
+    // Define the base query filter
+    let query = {};
+    
+    // If the user is an lvl-2 user, filter by their ministry
+    if (userRole === "lvl-2") {
+      query = { "requestorInfo.curMinistry": userMinistry };
+      console.log(`Backend: Filtering requests for lvl-2 user by ministry: ${userMinistry}`);
+    } else {
+      // For s-admin and admin, no filtering is needed as they see all requests
+      console.log(`Backend: Fetching all requests for role: ${userRole}`);
+    }
+    
+    // Fetch security requests from the database with the determined query
+    requests = await SecurityRequest.find(query).populate({
+      path: "submittedBy",
+      select: "username role ministry", // Populate with selected fields
+    });
 
-    console.log(
-      "Backend: Fetched security requests:",
-      requests.length,
-      "documents."
-    );
-
-    res.status(200).json(requests); // Send them as a JSON array
+    if (requests.length === 0 && userRole === "lvl-2") {
+      console.log("Backend: No requests found for this ministry.");
+    }
+    
+    res.status(200).json(requests);
   } catch (error) {
     console.error("Backend: Error fetching security requests:", error);
-    res
-      .status(500)
-      .json({ message: "Internal server error while fetching requests." });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -88,11 +89,12 @@ export const updateSecurityRequestStatus = async (req, res) => {
 
     // Validate if status is provided and is one of the allowed values (optional, but good practice)
     const allowedStatuses = [
-      "Pending Review",
+      "Completed",
       "Approved",
       "Rejected",
-      "In Progress",
-      "Completed",
+      "Pending HOD Review",
+      "Pending HCM Addition",
+      "Pending FSM Addition",
     ];
     if (!status || !allowedStatuses.includes(status)) {
       return res

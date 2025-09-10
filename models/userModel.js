@@ -20,7 +20,7 @@ const userSchema = new Schema(
     role: {
       type: String,
       required: true,
-      enum: ["s-admin", "admin", "lvl-1", "lvl-2", "lvl-3", "lvl-4"], // Define allowed roles
+      enum: ["s-admin", "admin", "HCM-Officer", "lvl-1", "lvl-2", "lvl-3", "lvl-4"], // Define allowed roles
       default: "admin",
     },
     email: {

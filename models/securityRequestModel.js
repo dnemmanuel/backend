@@ -9,13 +9,14 @@ const securityRequestSchema = new Schema(
       type: String,
       required: true,
       enum: [
-        "Pending Review",
         "Approved",
         "Rejected",
-        "In Progress",
+        "Pending HOD Review",
+        "Pending HCM Addition",
+        "Pending FSM Addition",
         "Completed",
       ],
-      default: "Pending Review",
+      default: "Pending HOD Review",
     },
     // Optional: Reference to the user who submitted the request
     // Requires your User model to be imported if you want to populate this.
