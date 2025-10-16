@@ -1,6 +1,6 @@
-import User from "../models/userModel.js";
+import User from "../user/userModel.js";
 import { validationResult } from "express-validator";
-import { logSystemEvent } from "./systemEventController.js"; // Import the logger
+import { logSystemEvent } from "../controllers/systemEventController.js"; // Import the logger
 
 export const createUser = async (req, res) => {
   const errors = validationResult(req);
@@ -59,39 +59,45 @@ export const createUser = async (req, res) => {
 };
 
 export const updateUser = async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+
   try {
-    const userIdToUpdate = req.params.id;
-    const updates = req.body;
+    const user = await User.findById(id);
 
-    // Optional: Prevent changing roles to s-admin if not s-admin themselves
-    if (
-      updates.role &&
-      updates.role === "s-admin" &&
-      req.user.role !== "s-admin"
-    ) {
-      return res.status(403).json({
-        message: "Only super-admins can assign the super-admin role.",
-      });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
     }
 
-    const updatedUser = await User.findByIdAndUpdate(userIdToUpdate, updates, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
+    // Apply all updates from the request body to the user document
+    for (const key in updates) {
+      // Skip ID field just in case
+      if (key !== "_id" && updates[key] !== undefined) {
+        // If the password is provided and is a non-empty string, it will be set.
+        // Mongoose will internally track that 'password' has been modified.
+        user[key] = updates[key];
+      }
     }
 
-    // Correctly log the system event after the user has been updated
-    const performedBy = req.user ? req.user._id : null;
-    const performedByName = req.user ? req.user.username : "Unknown";
-    const action = `Updated user: ${updatedUser.username} with role ${updatedUser.role}`;
+    // Calling user.save() ensures the pre('save') hook in userModel.js runs,
+    // which checks if the password was modified and hashes it if necessary.
+    const updatedUser = await user.save();
+
+    // Log the system event
+    const performedBy = req.user ? req.user.userId : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    const action = `Updated user account: ${updatedUser.username}`;
 
     logSystemEvent(performedBy, performedByName, action);
 
-    const { password: _, ...rest } = updatedUser.toJSON();
-    res.json({ message: "User updated successfully", user: rest });
+    // Respond, excluding the password
+    const userResponse = updatedUser.toObject();
+    delete userResponse.password;
+
+    res.json({
+      message: "User updated successfully",
+      user: userResponse,
+    });
   } catch (error) {
     console.error("Error updating user:", error);
     if (error.name === "ValidationError") {

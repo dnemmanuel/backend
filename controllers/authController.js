@@ -1,4 +1,4 @@
-import User from '../models/userModel.js'; // Assuming you import your User model
+import User from '../user/userModel.js'; // Assuming you import your User model
 import bcrypt from 'bcrypt';
 import { generateToken } from '../helpers/jwt.js';
 

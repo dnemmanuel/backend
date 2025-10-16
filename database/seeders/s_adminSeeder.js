@@ -1,17 +1,17 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
-import appAdmin from '../../models/userModel.js'; // Add .js
+import appAdmin from '../../user/userModel.js'; // Add .js
 
 export async function seedSuperAdminUser() {
   try {
     // Check if an admin user already exists
-    const existingAdmin = await appAdmin.findOne({ username: 'admin' });
+    const existingAdmin = await appAdmin.findOne({ username: 's-admin' });
 
     if (!existingAdmin) {
       // Create the initial admin user
       // const hashedPassword = await bcrypt.hash('password', 10); // Change 'password'
       const newAdmin = new appAdmin({
-        username: 'admin',
+        username: 's-admin',
         password: 'password',
         role: 's-admin', 
         email: 'dinnelemmanuel@gmail.com',

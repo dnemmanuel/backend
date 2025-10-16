@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
+import mongoose from "mongoose"; // 💡 ADDED: Import Mongoose to access the connection object
 import { connectDB } from "./database/connect.js";
 import { Env } from "./helpers/env.js";
 import { authorise, verifyToken } from "./middlewares/authMiddleware.js";
@@ -14,12 +15,14 @@ import * as models from "./models/index.js";
 // --- END IMPORTANT ---
 
 // Now import controllers and routes that use these models
+import { createPdfUploadRouter } from "./routes/pdfUploadRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
-import userRoutes from "./routes/userRoutes.js";
+import userRoutes from "./user/userRoutes.js";
 import roleRoutes from "./routes/roleRoutes.js";
 import securityRequestRoutes from "./routes/securityRequestRoutes.js";
 import permissionRoutes from "./routes/permissionRoutes.js";
-import { createUser } from "./controllers/userController.js";
+import folderRoutes from "./folder/folderRoutes.js";
+import { createUser } from "./user/userController.js";
 import { getSystemEvents } from "./controllers/systemEventController.js"; // Import getSystemEvents
 
 // --- ADD THIS LINE FOR DEBUGGING ---
@@ -51,7 +54,7 @@ connectDB()
     // The createUser route should be handled before the general /users route if it's publicly accessible
     app.post("/users/create", createUser);
     // User routes requiring token and authorization
-    app.use("/users", verifyToken, authorise(["s-admin", "lvl-2"]), userRoutes);
+    app.use("/users", verifyToken, authorise(["s-admin"]), userRoutes);
     app.use("/roles", verifyToken, authorise(["s-admin"]), roleRoutes);
     app.use(
       "/permissions",
@@ -60,12 +63,40 @@ connectDB()
       permissionRoutes
     );
 
+    // 💡 NEW: Application/Dashboard Card Routes
+    // 1. Management Routes (POST, PUT, DELETE, GET all) - Restricted to Admins
+    app.use(
+      "/api/folders/manage",
+      verifyToken,
+      authorise(["s-admin"]),
+      folderRoutes // This router handles the non-suffixed routes (/, /:id)
+    );
+
+    // 2. Public Read Route (GET active) - Accessible to all authenticated users
+    app.use(
+      "/api/folders",
+      verifyToken,
+      folderRoutes // This router handles the /active route
+    );
+
+    // 🚀 CORRECTED:
+    // 1. Initialize the router using the active Mongoose connection.
+    const pdfRouter = createPdfUploadRouter(mongoose.connection);
+
+    // 2. Register the initialized router instance (pdfRouter) as middleware.
+    app.use(
+      "/api/pdfs",
+      verifyToken,
+      authorise(["s-admin"]), // Adjusted roles for broader access
+      pdfRouter
+    );
+
     // Route for fetching system events
     // Ensure this route has appropriate authentication and authorization
     app.get(
       "/api/system-events",
       verifyToken,
-      authorise(["s-admin", "admin"]),
+      authorise(["s-admin"]),
       getSystemEvents
     );
 
