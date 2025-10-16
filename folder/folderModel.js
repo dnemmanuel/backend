@@ -9,16 +9,24 @@ const FolderSchema = new Schema(
       trim: true,
       unique: true,
     },
-    // The internal route path (e.g., '/payroll-archive')
+    // The internal route path (e.g., '/payroll-archive', '/payroll-archive/2025')
     page: {
       type: String,
       required: true,
       trim: true,
     },
+    // The group identifier (e.g., 'Finance', 'Payroll', 'PayrollArchive')
     group: {
       type: String,
       required: true,
       trim: true,
+    },
+    // NEW: Explicitly store the path of the parent folder/page. 
+    // This allows for hierarchical querying. (e.g., '/payroll-archive' or '/payroll-archive/2025')
+    parentPath: {
+      type: String,
+      trim: true,
+      default: "/",
     },
     // The descriptive text below the main title
     subtitle: {
@@ -55,13 +63,11 @@ const FolderSchema = new Schema(
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: false, // Set to true if creation logs are mandatory
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 const Folder = mongoose.model("Folder", FolderSchema);
+
 export default Folder;

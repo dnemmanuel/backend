@@ -17,7 +17,8 @@ const router = express.Router();
 router.get('/active', getAllFolders);
 
 // NEW: Route to fetch active folders filtered by a specific group
-router.get('/group/:group', getFoldersByGroup); 
+// We are changing this from a query parameter to a path parameter: /group/:groupName
+router.get('/group/:groupName', getFoldersByGroup); 
 
 // --- Admin/Management Routes (s-admin and admin only) ---
 // Use admin controller method to fetch all Folders (including inactive)
