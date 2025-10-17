@@ -49,6 +49,12 @@ export const verifyToken = async (req, res, next) => { // 💡 MUST be async
     
     // Attach the fully populated user (including role and permissions) to the request
     req.user = user; 
+
+    console.log('Backend verifyToken: User Object Permissions after Population:', 
+      user?.role?.permissions ? 
+          user.role.permissions.map(p => p.key) : 
+          'Permissions structure missing/empty'
+  );
     
     next();
   } catch (err) {

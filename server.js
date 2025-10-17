@@ -24,7 +24,6 @@ import { createPdfUploadRouter } from "./routes/pdfUploadRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./user/userRoutes.js";
 import roleRoutes from "./routes/roleRoutes.js";
-import securityRequestRoutes from "./routes/securityRequestRoutes.js";
 import permissionRoutes from "./routes/permissionRoutes.js";
 import folderRoutes from "./folder/folderRoutes.js";
 import folderReadRoutes from "./folder/folderReadRoutes.js";
@@ -173,9 +172,6 @@ connectDB()
       checkPermission("view_system_events"), // Requires 'view_system_events' permission
       getSystemEvents
     );
-
-    // General /api routes (Keep this last and most general)
-    app.use("/api", verifyToken, securityRequestRoutes);
 
     // ------------------------------------------------------------------------------------------------
 

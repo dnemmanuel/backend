@@ -40,13 +40,12 @@ const FolderSchema = new Schema(
       trim: true,
       default: "",
     },
-    // Array of roles required to see and access this Folder/card
-    requiredRole: {
+    // Array of permission keys required to see and access this Folder/card
+    requiredPermissions: {
       type: [String],
-      required: true,
-      // You may want to add validation here to ensure roles exist in your system
-      // enum: ['s-admin', 'admin', 'lvl-1', ...],
-      default: ["s-admin"],
+      // Note: required is set to false here to allow for folders accessible by anyone (if array is empty).
+      required: false,
+      default: ["view_folder"], // A sensible default permission key
     },
     // Status of the card: if false, it won't be displayed
     isActive: {
@@ -62,10 +61,18 @@ const FolderSchema = new Schema(
     // Optional: for logging which user created the card
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
+      required: false,
+    },
+    updatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 const Folder = mongoose.model("Folder", FolderSchema);

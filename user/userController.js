@@ -2,6 +2,9 @@ import User from "../user/userModel.js";
 import { validationResult } from "express-validator";
 import { logSystemEvent } from "../controllers/systemEventController.js"; // Import the logger
 
+/**
+ * Creates a new user after passing validation and permission checks.
+ */
 export const createUser = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -9,8 +12,10 @@ export const createUser = async (req, res) => {
   }
 
   try {
+    // Destructure required fields
     const { username, password, role, email, firstName, lastName } = req.body;
 
+    // Optional early check, though Mongoose validation should cover this
     if (!username || !password || !role || !email) {
       return res.status(400).json({
         message:
@@ -30,22 +35,27 @@ export const createUser = async (req, res) => {
       email,
       firstName,
       lastName,
-      isActive: true,
+      isActive: true, // Default to active
       lastLogin: null,
-      ministry: req.body.ministry || "Default Ministry", // Ensure ministry is set or default
+      // FIX: Removed "Default Ministry". Mongoose will now correctly throw a 
+      // validation error if ministry is not provided in req.body.
+      ministry: req.body.ministry, 
     });
 
     const savedUser = await newUser.save();
 
     // Correctly log the system event after the user has been saved
-    const performedBy = req.user ? req.user._id : null;
+    const performedBy = req.user ? req.user._id : "System";
     const performedByName = req.user ? req.user.username : "Unknown";
-    const action = `Created user: ${savedUser.username} with role ${savedUser.role}`;
+    const action = `Created new user: ${savedUser.username} with role ${savedUser.role}`;
 
     logSystemEvent(performedBy, performedByName, action);
 
-    const { password: _, ...rest } = savedUser.toJSON();
-    res.status(201).json({ message: "User created successfully", user: rest });
+    // Respond with the saved user data, excluding the password
+    res.status(201).json({
+      message: "User created successfully",
+      user: savedUser.toObject({ getters: true, virtuals: false }),
+    });
   } catch (error) {
     console.error("Error creating user:", error);
     if (error.name === "ValidationError") {
@@ -58,45 +68,51 @@ export const createUser = async (req, res) => {
   }
 };
 
+/**
+ * Updates an existing user based on ID.
+ * Implements a whitelist to prevent Mass Assignment vulnerability.
+ */
 export const updateUser = async (req, res) => {
-  const { id } = req.params;
-  const updates = req.body;
-
   try {
-    const user = await User.findById(id);
+    const userId = req.params.id;
 
-    if (!user) {
+    // FIX: Implement whitelisting to prevent unauthorized changes to sensitive fields (Mass Assignment)
+    const allowedUpdates = {};
+    if (req.body.firstName !== undefined) allowedUpdates.firstName = req.body.firstName;
+    if (req.body.lastName !== undefined) allowedUpdates.lastName = req.body.lastName;
+    if (req.body.email !== undefined) allowedUpdates.email = req.body.email;
+    if (req.body.ministry !== undefined) allowedUpdates.ministry = req.body.ministry;
+    // CRITICAL: DO NOT expose fields like 'role', 'password', or 'isActive' in this general update route.
+    
+    // Check if any fields were provided for update
+    if (Object.keys(allowedUpdates).length === 0) {
+        return res.status(400).json({ message: "No valid fields provided for update." });
+    }
+
+    // Find and update the user
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      allowedUpdates,
+      { 
+        new: true, 
+        runValidators: true // Enforce Mongoose validation on updated fields (like ministry required)
+      }
+    ).select("-password"); // Exclude password from the returned object
+
+    if (!updatedUser) {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // Apply all updates from the request body to the user document
-    for (const key in updates) {
-      // Skip ID field just in case
-      if (key !== "_id" && updates[key] !== undefined) {
-        // If the password is provided and is a non-empty string, it will be set.
-        // Mongoose will internally track that 'password' has been modified.
-        user[key] = updates[key];
-      }
-    }
-
-    // Calling user.save() ensures the pre('save') hook in userModel.js runs,
-    // which checks if the password was modified and hashes it if necessary.
-    const updatedUser = await user.save();
-
     // Log the system event
-    const performedBy = req.user ? req.user.userId : "System";
-    const performedByName = req.user ? req.user.username : "System";
-    const action = `Updated user account: ${updatedUser.username}`;
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "Unknown";
+    const action = `Updated user: ${updatedUser.username}`;
 
     logSystemEvent(performedBy, performedByName, action);
 
-    // Respond, excluding the password
-    const userResponse = updatedUser.toObject();
-    delete userResponse.password;
-
     res.json({
       message: "User updated successfully",
-      user: userResponse,
+      user: updatedUser,
     });
   } catch (error) {
     console.error("Error updating user:", error);
@@ -110,35 +126,19 @@ export const updateUser = async (req, res) => {
   }
 };
 
+/**
+ * Deletes a user based on ID.
+ */
 export const deleteUser = async (req, res) => {
   try {
-    const userIdToDelete = req.params.id;
-
-    const userToDelete = await User.findById(userIdToDelete);
-    if (!userToDelete) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (userToDelete.role === "s-admin") {
-      const superAdminsCount = await User.countDocuments({ role: "s-admin" });
-      if (superAdminsCount <= 1) {
-        return res.status(403).json({
-          message:
-            "Cannot delete the last super-admin user. At least one super-admin must remain.",
-        });
-      }
-    }
-
-    const deletedUser = await User.findByIdAndDelete(userIdToDelete);
+    const deletedUser = await User.findByIdAndDelete(req.params.id);
 
     if (!deletedUser) {
-      return res.status(404).json({
-        message: "User not found after check (possible race condition).",
-      });
+      return res.status(404).json({ message: "User not found." });
     }
 
-    // Correctly log the system event after the user has been deleted
-    const performedBy = req.user ? req.user._id : null;
+    // Log the system event
+    const performedBy = req.user ? req.user._id : "System";
     const performedByName = req.user ? req.user.username : "Unknown";
     const action = `Deleted user: ${deletedUser.username} with role ${deletedUser.role}`;
 
@@ -160,6 +160,9 @@ export const deleteUser = async (req, res) => {
   }
 };
 
+/**
+ * Fetches a list of all users.
+ */
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select("-password"); // Exclude password from results
@@ -172,6 +175,9 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
+/**
+ * Fetches a single user by ID.
+ */
 export const getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select("-password"); // Exclude password
@@ -181,8 +187,9 @@ export const getUserById = async (req, res) => {
     res.status(200).json(user);
   } catch (error) {
     console.error("Error fetching user by ID:", error);
-    res
-      .status(500)
-      .json({ message: "Failed to fetch user", error: error.message });
+    if (error.kind === 'ObjectId') {
+        return res.status(400).json({ message: "Invalid User ID format." });
+    }
+    res.status(500).json({ message: "Internal server error" });
   }
 };

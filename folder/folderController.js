@@ -1,6 +1,6 @@
 import Folder from "../folder/folderModel.js";
 import { logSystemEvent } from "../controllers/systemEventController.js";
-import dayjs from "dayjs"; // IMPORTANT: Used for date calculations in cron job logic
+import dayjs from "dayjs";
 
 // --- CORE GENERATION LOGIC (Reusable by API and Cron) ---
 
@@ -8,9 +8,6 @@ import dayjs from "dayjs"; // IMPORTANT: Used for date calculations in cron job 
  * Core function to automatically generate the Year folder for the NEXT month
  * and the Month folder itself for the Payroll Archive.
  * This function is idempotent (safe to run multiple times).
- * @param {string} performedBy - The user ID of the performer (or 'System').
- * @param {string} performedByName - The username of the performer (or 'System Automated Job').
- * @returns {Promise<Object>} Status of the generation.
  */
 export const generateArchiveFoldersCore = async (
   performedBy,
@@ -39,117 +36,176 @@ export const generateArchiveFoldersCore = async (
 
   try {
     const today = dayjs();
-    // Calculate the next month's date
     const nextMonthDayjs = today.add(1, "month");
 
     const targetYear = nextMonthDayjs.year();
-    const targetMonthIndex = nextMonthDayjs.month(); // 0 (Jan) to 11 (Dec)
+    const targetMonthIndex = nextMonthDayjs.month();
+    const targetMonthName = months[targetMonthIndex];
 
-    const yearName = String(targetYear);
-    const monthName = months[targetMonthIndex];
-    const numericMonth = nextMonthDayjs.format("MM");
+    // --- 1. Ensure the Year folder exists (e.g., /payroll-archive/2025) ---
+    const yearFolderName = String(targetYear);
+    const yearFolderPage = `${BASE_PAGE}/${targetYear}`;
 
-    const yearPage = `${BASE_PAGE}/${yearName}`;
-    const yearParentPath = BASE_PAGE;
-    const monthPage = `${yearPage}/${numericMonth}`;
-    const monthParentPath = yearPage;
+    let yearFolder = await Folder.findOne({
+      name: yearFolderName,
+      group: GENERATED_GROUP,
+      parentPath: BASE_PAGE,
+    });
 
-    // 1. Create/Ensure the TARGET Year Folder exists
-    const [yearFolder, yearCreated] = await ensureFolderExists(
-      {
-        name: yearName,
-        page: yearPage,
+    if (!yearFolder) {
+      yearFolder = await Folder.create({
+        name: yearFolderName,
+        page: yearFolderPage,
         group: GENERATED_GROUP,
-        subtitle: `${yearName} Payroll Submissions`,
-        ministry: "AGD",
-        requiredRole: ["s-admin", "test"],
-        isActive: true,
-        parentPath: yearParentPath,
-        theme: "yellow",
-      },
-      performedBy,
-      performedByName
-    );
-
-    if (yearCreated) {
-      newFoldersCreated.push(yearFolder);
+        parentPath: BASE_PAGE,
+        subtitle: `Payroll files for year ${targetYear}`,
+        requiredPermissions: ["payroll_view"],
+        theme: "blue",
+        createdBy: performedBy,
+      });
+      newFoldersCreated.push(yearFolder.name);
+      logSystemEvent(
+        performedBy,
+        performedByName,
+        "Folder Created",
+        `Created Payroll Year folder: ${yearFolder.name}`,
+        yearFolder._id
+      );
     } else {
       foldersSkipped++;
     }
 
-    // 2. Create/Ensure the TARGET Month Folder exists
-    const [monthFolder, monthCreated] = await ensureFolderExists(
-      {
-        name: monthName,
-        page: monthPage,
-        // The group for the month folder is the year name (e.g., '2025')
-        group: yearName,
-        subtitle: `${monthName} ${yearName} Payroll Submissions`,
-        ministry: "AGD",
-        requiredRole: ["s-admin", "test"],
-        isActive: true,
-        parentPath: monthParentPath,
-        theme: "cyan", // ADDED: Theme for the Month Folder
-      },
-      performedBy,
-      performedByName
-    );
+    // --- 2. Ensure the Month folder exists inside the Year folder (e.g., /payroll-archive/2025/January) ---
+    const monthFolderName = `${targetMonthName} ${targetYear}`;
+    const monthFolderPage = `${yearFolderPage}/${targetMonthName}`;
 
-    if (monthCreated) {
-      newFoldersCreated.push(monthFolder);
+    let monthFolder = await Folder.findOne({
+      name: monthFolderName,
+      group: GENERATED_GROUP,
+      parentPath: yearFolderPage,
+    });
+
+    if (!monthFolder) {
+      monthFolder = await Folder.create({
+        name: monthFolderName,
+        page: monthFolderPage,
+        group: GENERATED_GROUP,
+        parentPath: yearFolderPage,
+        subtitle: `Payroll files for ${targetMonthName} ${targetYear}`,
+        requiredPermissions: ["payroll_view"],
+        theme: "green",
+        createdBy: performedBy,
+      });
+      newFoldersCreated.push(monthFolder.name);
+      logSystemEvent(
+        performedBy,
+        performedByName,
+        "Folder Created",
+        `Created Payroll Month folder: ${monthFolder.name}`,
+        monthFolder._id
+      );
     } else {
       foldersSkipped++;
     }
 
-    return {
-      createdCount: newFoldersCreated.length,
-      skippedCount: foldersSkipped,
-      createdFolders: newFoldersCreated.map((f) => f.name),
-    };
+    return { newFoldersCreated, foldersSkipped };
   } catch (error) {
-    // Log the detailed error for debugging, but re-throw to be handled by caller (API or Cron)
-    console.error("Core error in generateArchiveFoldersCore:", error);
-    throw new Error(`Failed to generate folders: ${error.message}`);
+    console.error("Error in generateArchiveFoldersCore:", error);
+    logSystemEvent(
+      performedBy,
+      performedByName,
+      "Folder Generation Failed",
+      `System failed to create archive folders. Error: ${error.message}`
+    );
+    throw error;
   }
 };
 
 /**
- * Helper function to create a folder if it doesn't already exist.
+ * API Handler: Fetches active folders for a specific group (e.g., 'gosl-payroll')
+ * based on the authenticated user's permissions.
+ * Expected API call: /api/folders/group/gosl-payroll
  */
-const ensureFolderExists = async (folderData, performedBy, performedByName) => {
+export const getFoldersByGroup = async (req, res) => {
+  // Use the group parameter for filtering
+  const group = req.params.group;
+
+  // Get user permissions. We assume req.user is populated by middleware.
+  let userPermissionKeys = req.user.role?.permissions || [];
+
+  // Normalize permissions to an array of strings for the MongoDB query.
+  if (
+    userPermissionKeys.length > 0 &&
+    typeof userPermissionKeys[0] !== "string" &&
+    userPermissionKeys[0].key
+  ) {
+    userPermissionKeys = userPermissionKeys.map((p) => p.key);
+  } else if (!Array.isArray(userPermissionKeys)) {
+    userPermissionKeys = [];
+  }
+  console.log(
+    `User Permissions FINAL CHECK (used in query): ${JSON.stringify(
+      userPermissionKeys
+    )}`
+  );
+  console.log("--- FOLDER FETCH DEBUG ---");
+  console.log(
+    `User Permissions (Normalized): ${userPermissionKeys.join(", ")}`
+  );
+
   try {
-    // Find existing folder by the unique 'page' path
-    const existingFolder = await Folder.findOne({ page: folderData.page });
-
-    if (existingFolder) {
-      // Folder already exists, skip creation
-      return [existingFolder, false];
+    // 1. Security Check: If the user has no permissions, return no folders.
+    if (userPermissionKeys.length === 0) {
+      return res.status(200).json([]);
     }
 
-    // Folder does not exist, create it
-    const newFolder = new Folder({
-      ...folderData,
-      createdBy: performedBy, // Set the creator ID
-    });
+    // 2. CONSTRUCT THE SECURE MONGODB QUERY
+    const query = {
+      isActive: true,
+      group: group, // ✅ FIX 1: Query by the 'group' field using the URL parameter.
+      parentPath: "/", // ✅ FIX 2: Only show top-level folders (parentPath: '/') for the dashboard view.
+      requiredPermissions: { $in: userPermissionKeys },
+    };
 
-    const savedFolder = await newFolder.save();
+    console.log(`MongoDB Query for group '${group}': ${JSON.stringify(query)}`);
+    console.log("--------------------------");
 
-    // Log system event for creation
-    const action = `Created new folder card: ${savedFolder.name} (Page: ${savedFolder.page})`;
-    logSystemEvent(performedBy, performedByName, action);
+    // Find active, accessible folders that match the group
+    const folders = await Folder.find(query);
 
-    return [savedFolder, true]; // Return the created folder and creation status
+    res.status(200).json(folders);
   } catch (error) {
-    // Handle specific duplicate key error if another process just created it
-    if (error.code === 11000) {
-      console.warn(
-        `Duplicate key error: Folder with page ${folderData.page} already exists.`
-      );
-      // Try to fetch the existing folder one more time
-      const existingFolder = await Folder.findOne({ page: folderData.page });
-      return [existingFolder, false];
-    }
-    throw error; // Re-throw other errors
+    console.error(
+      `Error fetching folders by group '${group}' for user ${req.user.username} (Permissions Check):`,
+      error
+    );
+    res.status(500).json({ message: "Failed to fetch folder cards by group." });
+  }
+};
+
+/**
+ * API Handler: Route to trigger automatic folder generation.
+ * This is for manual/admin use.
+ */
+export const generateArchiveFolders = async (req, res) => {
+  const performedBy = req.user ? req.user.userId : "System";
+  const performedByName = req.user ? req.user.username : "System";
+
+  try {
+    const result = await generateArchiveFoldersCore(
+      performedBy,
+      performedByName
+    );
+
+    res.status(200).json({
+      message: "Payroll Archive folders generated successfully.",
+      ...result,
+    });
+  } catch (error) {
+    console.error("Error generating archive folders (API):", error);
+    res
+      .status(500)
+      .json({ message: "Failed to generate payroll archive folders." });
   }
 };
 
@@ -188,80 +244,78 @@ export const getAllFoldersAdmin = async (req, res) => {
  * Restricted to s-admin/admin.
  */
 export const createFolder = async (req, res) => {
+  // Ensure the required fields are extracted from the request body.
+  const {
+    name,
+    page,
+    group,
+    subtitle,
+    ministry,
+    requiredPermissions,
+    isActive,
+    theme,
+  } = req.body;
+
+  // 🛑 CRITICAL FIX: The error is here, checking for the wrong fields.
+  if (!name || !page || !group) {
+    // <-- Check for the correct required fields: name, page, and group
+    return res.status(400).json({
+      message:
+        "Name, page, and group are mandatory fields for folder creation.", // <-- Corrected message
+    });
+  }
+
+  // NOTE: You should also check that `requiredPermissions` is at least defined,
+  // even if it's an empty array, but the main error is the field names.
+
   try {
-    const {
-      name,
-      page,
-      group,
-      subtitle,
-      ministry,
-      requiredRole,
-      isActive,
-      theme,
-      parentPath,
-    } = req.body;
-
-    if (!name || !page || !requiredRole) {
-      return res
-        .status(400)
-        .json({ message: "Name, page, and requiredRole are mandatory." });
-    }
-
-    // Check if a folder with the same 'page' path already exists
-    const existingFolder = await Folder.findOne({ page });
-    if (existingFolder) {
-      return res
-        .status(409)
-        .json({
-          message: `A folder with the page path '${page}' already exists.`,
-        });
-    }
-
     const newFolder = new Folder({
       name,
       page,
-      group,
+      group, // Mandatory
+      // parentPath can be calculated if needed, or default to '/' (as per model)
       subtitle,
       ministry,
-      requiredRole,
+      // Ensure requiredPermissions is an array, defaulting to an empty array if undefined/null
+      requiredPermissions: Array.isArray(requiredPermissions)
+        ? requiredPermissions
+        : [],
       isActive,
       theme,
-      parentPath,
-      createdBy: req.user.userId,
+      createdBy: req.user._id, // Assumes user is authenticated and attached by verifyToken
     });
 
     const savedFolder = await newFolder.save();
-
-    // Log system event
-    const performedBy = req.user.userId;
-    const performedByName = req.user.username;
-    const action = `Created folder card: ${savedFolder.name} (Page: ${savedFolder.page})`;
-    logSystemEvent(performedBy, performedByName, action);
 
     res.status(201).json({
       message: "Folder card created successfully.",
       folder: savedFolder,
     });
   } catch (error) {
-    console.error("Error creating folder:", error);
+    // Handle unique constraint errors (e.g., if name is duplicated)
     if (error.code === 11000) {
-      // Handle MongoDB unique index error (if name or page is set as unique)
       return res
         .status(409)
-        .json({
-          message: "A folder with this name or page path already exists.",
-        });
+        .json({ message: "A folder with this name already exists." });
     }
-    res.status(500).json({ message: "Internal server error." });
+    console.error("Error creating folder:", error);
+    res
+      .status(500)
+      .json({ message: "Internal server error during folder creation." });
   }
 };
-
 /**
  * Update an existing folder/card.
  * Restricted to s-admin/admin.
  */
 export const updateFolder = async (req, res) => {
   try {
+    // If the deprecated 'requiredRole' field is passed, map it to the new 'requiredPermissions' field.
+    if (req.body.requiredRole) {
+      req.body.requiredPermissions = req.body.requiredRole;
+      delete req.body.requiredRole;
+    }
+
     const updatedFolder = await Folder.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -317,47 +371,25 @@ export const deleteFolder = async (req, res) => {
 };
 
 /**
- * Get all active folders/cards filtered by a specific group name.
- * Expected API call: /api/folders/group/gosl-payroll
- */
-export const getFoldersByGroup = async (req, res) => {
-  // FIX: Read the group name from the path parameters (req.params)
-  // The router defined it as /group/:groupName
-  const groupName = req.params.group;
-
-  if (!groupName) {
-    // This check is a safeguard, but req.params.groupName will be defined if the route matched.
-    return res
-      .status(400)
-      .json({ message: "Group name path parameter is required." });
-  }
-
-  try {
-    // Find all active folders that match the provided group name
-    const folders = await Folder.find({
-      isActive: true,
-      group: groupName,
-    });
-
-    // Note: If no folders are found, an empty array [] is returned, which is fine.
-    res.status(200).json(folders);
-  } catch (error) {
-    console.error(`Error fetching folders for group '${groupName}':`, error);
-    res.status(500).json({ message: "Failed to fetch folder cards by group." });
-  }
-};
-
-/**
  * Get all active folders/cards filtered by a specific parent path.
  * Expected API call: /api/folders/parent?path=/path/to/parent
  */
 export const getFoldersByParentPath = async (req, res) => {
   const parentPath = req.query.path;
 
-  // 1. EXTRACT THE USER'S ROLE NAME
-  // The verifyToken middleware has ensured that req.user is fully populated,
-  // including the role document which contains the role's 'name' property.
-  const userRoleName = req.user.role.name;
+  // 1. EXTRACT THE USER'S PERMISSIONS
+  let userPermissionKeys = req.user.role?.permissions || [];
+
+  // Normalize permissions to an array of strings
+  if (
+    userPermissionKeys.length > 0 &&
+    typeof userPermissionKeys[0] !== "string" &&
+    userPermissionKeys[0].key
+  ) {
+    userPermissionKeys = userPermissionKeys.map((p) => p.key);
+  } else if (!Array.isArray(userPermissionKeys)) {
+    userPermissionKeys = [];
+  }
 
   if (!parentPath) {
     return res
@@ -370,49 +402,20 @@ export const getFoldersByParentPath = async (req, res) => {
     const query = {
       isActive: true,
       parentPath: parentPath,
-      // Use the $in operator: Find all folders where the user's role name
-      // is present in the Folder's 'requiredRole' array.
-      requiredRole: { $in: [userRoleName] },
+      // ✅ FIX: Use the $in operator against the requiredPermissions field
+      requiredPermissions: { $in: userPermissionKeys },
     };
 
-    // Find active, accessible folders that match the parent path
     const folders = await Folder.find(query);
 
-    // Note: If no folders are found, an empty array [] is returned, which is fine.
     res.status(200).json(folders);
   } catch (error) {
     console.error(
-      `Error fetching folders by parent path '${parentPath}' for role '${userRoleName}':`,
+      `Error fetching folders by parent path '${parentPath}' for user ${req.user.username} (Permissions Check):`,
       error
     );
     res
       .status(500)
       .json({ message: "Failed to fetch folder cards by parent path." });
-  }
-};
-
-/**
- * API Handler: Route to trigger automatic folder generation.
- * This is for manual/admin use.
- */
-export const generateArchiveFolders = async (req, res) => {
-  const performedBy = req.user ? req.user.userId : "System";
-  const performedByName = req.user ? req.user.username : "System";
-
-  try {
-    const result = await generateArchiveFoldersCore(
-      performedBy,
-      performedByName
-    );
-
-    res.status(200).json({
-      message: "Payroll Archive folders generated successfully.",
-      ...result,
-    });
-  } catch (error) {
-    console.error("Error generating archive folders (API):", error);
-    res
-      .status(500)
-      .json({ message: "Failed to generate payroll archive folders." });
   }
 };
