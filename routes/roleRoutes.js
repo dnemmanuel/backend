@@ -1,3 +1,5 @@
+// routes/roleRoutes.js
+
 import express from 'express';
 import {
     getAllRoles,
@@ -7,12 +9,50 @@ import {
     deleteRole,
 } from '../controllers/roleController.js';
 
+// 💡 NEW: Import the necessary middleware
+import { verifyToken } from '../middlewares/authMiddleware.js'; 
+import { checkPermission } from '../middlewares/checkPermission.js'; 
+
 const router = express.Router();
 
-router.get('/', getAllRoles);
-router.get('/:id', getRoleById);
-router.post('/create', createRole);
-router.put('/update', updateRole);
-router.delete('/delete', deleteRole);
+// Get all roles (Permission needed to view the manager)
+router.get(
+    '/', 
+    verifyToken,
+    checkPermission('manage_roles'), 
+    getAllRoles
+);
+
+// Get role by ID
+router.get(
+    '/:id', 
+    verifyToken, 
+    checkPermission('manage_roles'), 
+    getRoleById
+);
+
+// Create a new role
+router.post(
+    '/create', 
+    verifyToken, 
+    checkPermission('manage_roles'), // Requires 'create_role' permission
+    createRole
+);
+
+// Update role (Assuming the ID is passed in the route parameter)
+router.put(
+    '/update/:id', 
+    verifyToken,
+    checkPermission('manage_roles'), // Requires 'edit_role' permission
+    updateRole
+);
+
+// Delete role (Assuming the ID is passed in the route parameter)
+router.delete(
+    '/delete/:id', 
+    verifyToken, 
+    checkPermission('manage_roles'), // Requires 'delete_role' permission
+    deleteRole
+);
 
 export default router;

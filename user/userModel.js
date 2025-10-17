@@ -16,17 +16,12 @@ const userSchema = new Schema(
       type: String,
       required: true,
       minlength: 8,
+      select: false, 
     },
     role: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId, // Use ObjectId
+      ref: 'Role', // Reference your Role model
       required: true,
-      enum: [
-        "s-admin",
-        "payroll-admin",
-        "hr-reviewer",
-        "agency-submittor"
-      ], 
-      default: "admin",
     },
     email: {
       type: String,

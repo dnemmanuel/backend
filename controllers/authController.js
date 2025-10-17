@@ -1,24 +1,52 @@
-import User from '../user/userModel.js'; // Assuming you import your User model
-import bcrypt from 'bcrypt';
-import { generateToken } from '../helpers/jwt.js';
+import User from "../user/userModel.js";
+import Role from "../models/roleModel.js";
+import bcrypt from "bcrypt";
+import { generateToken } from "../helpers/jwt.js";
 
 export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
     // Find the user by username, and select the password
-    const appUser = await User.findOne({ username }).select('+password');
+    const appUser = await User.findOne({ username }).select("+password role");
 
     if (!appUser) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     // Compare the provided password with the hashed password in the database
     const isPasswordValid = await bcrypt.compare(password, appUser.password);
 
     if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
+
+    const roleId = appUser.role; // This is the ObjectId stored in the User document.
+
+    if (!roleId) {
+      // This handles cases where the role field is genuinely empty in the database
+      console.error(
+        `Login failed for user ${appUser.username}: Role ID is missing.`
+      );
+      return res
+        .status(401)
+        .json({ message: "Login failed: User role configuration error." });
+    }
+
+    // Fetch the Role and populate its Permissions using the correct _id.
+    const userRole = await Role.findById(roleId) // <--- CORRECT: Query by _id
+      .populate("permissions")
+      .exec();
+
+    if (!userRole) {
+      // This is a safety check: if a user exists but their role does not, fail login.
+      return res
+        .status(401)
+        .json({ message: "Login failed: User role configuration error." });
+    }
+
+    // Extract the array of permission keys (strings)
+    const permissionsKeys = userRole.permissions.map((p) => p.key);
 
     // Payload for JWT
     const payload = {
@@ -31,25 +59,20 @@ export const login = async (req, res) => {
 
     // --- CRITICAL CHANGE HERE: Include role and _id in the response ---
     res.json({
-      message: 'Login successful',
+      message: "Login successful",
       token: token,
-      role: appUser.role, // Include the user's role
-      _id: appUser._id,   // Include the user's ID
+      role: userRole.name, // 💡 Include the user's role
+      _id: appUser._id, // 💡 Include the user's ID
+      permissions: permissionsKeys, // 💡 NEW: Include the permissions array
     });
-
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
 export const logout = (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error('Logout error:', err);
-      res.status(500).json({ message: 'Failed to logout' });
-    } else {
-      res.json({ message: 'Logout successful' });
-    }
-  });
+  // For JWT-based authentication, "logging out" is a client-side action
+  // (deleting the token). The server only needs to confirm the request was received.
+  res.json({ message: "Logout successful" });
 };

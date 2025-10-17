@@ -1,7 +1,8 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
-const permissionSchema = new mongoose.Schema({
-  name: {
+const permissionSchema = new Schema({
+  // The unique key for authorization checks (e.g., 'view_user_manager')
+  key: {
     type: String,
     required: true,
     unique: true,
@@ -9,13 +10,20 @@ const permissionSchema = new mongoose.Schema({
     minlength: 3,
     maxlength: 100,
   },
+  // A brief, descriptive name for display in the UI (e.g., 'View User Management Page')
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 100,
+  },
+  // A longer explanation of what this permission grants
   description: {
     type: String,
-    required: false, // Description is optional
     trim: true,
     maxlength: 250,
   },
-}, { timestamps: true }); // Add createdAt and updatedAt fields
+}, { timestamps: true });
 
 const Permission = mongoose.model('Permission', permissionSchema);
 export default Permission;
