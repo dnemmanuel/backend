@@ -22,6 +22,7 @@ const permissionSchema = new Schema({
     type: String,
     trim: true,
     maxlength: 250,
+    required: true
   },
 }, { timestamps: true });
 

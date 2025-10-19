@@ -8,11 +8,11 @@ export const getAllPermissions = async (req, res) => {
     // Fetch all permissions, sorting by name for a cleaner UI list
     const permissions = await Permission.find().sort({ name: 1 });
 
-    // Return only the _id, name, and key, as the description is not needed for the checkboxes
     const simplifiedPermissions = permissions.map((p) => ({
       _id: p._id,
       name: p.name,
       key: p.key,
+      description: p.description,
     }));
 
     res.status(200).json(simplifiedPermissions);

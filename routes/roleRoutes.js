@@ -19,7 +19,7 @@ const router = express.Router();
 router.get(
     '/', 
     verifyToken,
-    checkPermission('manage_roles'), 
+    checkPermission('view_roles'), 
     getAllRoles
 );
 
@@ -27,7 +27,7 @@ router.get(
 router.get(
     '/:id', 
     verifyToken, 
-    checkPermission('manage_roles'), 
+    checkPermission('view_roles'), 
     getRoleById
 );
 
@@ -35,7 +35,7 @@ router.get(
 router.post(
     '/create', 
     verifyToken, 
-    checkPermission('manage_roles'), // Requires 'create_role' permission
+    checkPermission('define_roles'), // Requires 'create_role' permission
     createRole
 );
 
@@ -43,7 +43,7 @@ router.post(
 router.put(
     '/update/:id', 
     verifyToken,
-    checkPermission('manage_roles'), // Requires 'edit_role' permission
+    checkPermission('modify_roles'), // Requires 'edit_role' permission
     updateRole
 );
 
@@ -51,7 +51,7 @@ router.put(
 router.delete(
     '/delete/:id', 
     verifyToken, 
-    checkPermission('manage_roles'), // Requires 'delete_role' permission
+    checkPermission('delete_roles'), // Requires 'delete_role' permission
     deleteRole
 );
 

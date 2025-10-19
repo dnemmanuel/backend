@@ -58,6 +58,13 @@ const userSchema = new Schema(
       trim: true,
       required: [true, "Ministry is required for the user"],
     },
+    // Array of permission keys required to see and access this Folder/card
+    requiredPermissions: {
+      type: [String],
+      // Note: required is set to false here to allow for folders accessible by anyone (if array is empty).
+      required: false,
+      default: ["test"], // A sensible default permission key
+    },
   },
   {
     timestamps: true,

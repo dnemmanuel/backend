@@ -18,19 +18,19 @@ const router = express.Router();
 router.post(
   "/",
   verifyToken,
-  checkPermission("create_user"), // CRITICAL: Only users with this permission can create
+  checkPermission("create_users"), // CRITICAL: Only users with this permission can create
   createUserValidation, // Recommended: Add a validation middleware here
   createUser
 );
 
 // Get all users (List for User Manager)
-router.get("/", verifyToken, checkPermission("view_user_manager"), getAllUsers);
+router.get("/", verifyToken, checkPermission("view_all_users"), getAllUsers);
 
 // Get user by ID (Detail view)
 router.get(
   "/:id",
   verifyToken,
-  checkPermission("view_user_manager"),
+  checkPermission("view_all_users"),
   getUserById
 );
 
@@ -38,7 +38,7 @@ router.get(
 router.put(
   "/update/:id",
   verifyToken,
-  checkPermission("edit_user"),
+  checkPermission("edit_users"),
   updateUser
 );
 
@@ -46,7 +46,7 @@ router.put(
 router.delete(
   "/delete/:id",
   verifyToken,
-  checkPermission("delete_user"),
+  checkPermission("delete_users"),
   deleteUser
 );
 

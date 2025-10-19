@@ -18,7 +18,7 @@ const router = express.Router();
 router.get(
     '/', 
     verifyToken,
-    checkPermission('view_permission_manager'), // Permission to view the list of all permissions
+    checkPermission('view_all_permissions'), // Permission to view the list of all permissions
     getAllPermissions
 );
 
@@ -26,7 +26,7 @@ router.get(
 router.post(
     '/create', 
     verifyToken,
-    checkPermission('create_permission'), // Permission to create new permissions
+    checkPermission('define_permissions'), // Permission to create new permissions
     permissionValidation, 
     createPermission
 ); 
@@ -35,7 +35,7 @@ router.post(
 router.put(
     '/update/:id', 
     verifyToken,
-    checkPermission('edit_permission'), // Permission to edit existing permissions
+    checkPermission('modify_permissions'), // Permission to edit existing permissions
     permissionValidation, 
     updatePermission
 ); 
@@ -44,7 +44,7 @@ router.put(
 router.delete(
     '/delete/:id', 
     verifyToken,
-    checkPermission('delete_permission'), // Permission to delete permissions
+    checkPermission('delete_permissions'), // Permission to delete permissions
     deletePermission
 );
 
