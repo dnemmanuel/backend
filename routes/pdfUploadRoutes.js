@@ -2,20 +2,44 @@ import express from "express";
 import multer from "multer";
 import crypto from "crypto";
 import path from "path";
-import { ObjectId } from "mongodb"; // Keep ObjectId for lookups
+import { ObjectId } from "mongodb";
 import { checkPermission } from "../middlewares/checkPermission.js";
-import User from "../user/userModel.js"; // Mongoose User model
+import { uploadLimiter } from "../middlewares/rateLimiter.js";
+import User from "../user/userModel.js";
+import { FILE_UPLOAD, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES, PERMISSIONS } from "../constants/index.js";
+import { logError, logInfo, logWarn } from "../utils/logger.js";
 
 // Use Multer's memory storage to buffer the file
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
+  limits: {
+    fileSize: FILE_UPLOAD.MAX_SIZE, // 10MB
+    files: 1, // Only 1 file per request
+  },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype !== "application/pdf") {
-      cb(new Error("Only PDF files are permitted."), false);
-    } else {
-      cb(null, true);
+    // Check MIME type
+    if (!FILE_UPLOAD.ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      logWarn('Invalid file type attempted', {
+        mimeType: file.mimetype,
+        userId: req.user?._id,
+      });
+      cb(new Error(ERROR_MESSAGES.INVALID_FILE_TYPE), false);
+      return;
     }
+    
+    // Check file extension
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!FILE_UPLOAD.ALLOWED_EXTENSIONS.includes(ext)) {
+      logWarn('Invalid file extension attempted', {
+        extension: ext,
+        userId: req.user?._id,
+      });
+      cb(new Error(ERROR_MESSAGES.INVALID_FILE_TYPE), false);
+      return;
+    }
+    
+    cb(null, true);
   },
 });
 
@@ -38,25 +62,24 @@ export const createPdfUploadRouter = (conn) => {
 
   router.post(
     "/upload-pdf",
-    checkPermission("upload_payroll_pdfs"),
+    // TEMPORARILY DISABLED - Rate limiting paused for development
+    // uploadLimiter,
+    checkPermission(PERMISSIONS.UPLOAD_PAYROLL_PDFS),
     upload.single("pdfFile"),
     async (request, response, next) => {
       if (!request.file) {
-        return response.status(400).json({
-          message: "File upload failed or was rejected.",
+        return response.status(HTTP_STATUS.BAD_REQUEST).json({
+          message: ERROR_MESSAGES.FILE_UPLOAD_FAILED,
         });
       }
 
-      console.log("--- PDF UPLOAD DEBUG ---");
-      console.log("request.user:", request.user);
-      console.log("------------------------");
-
-      let determinedUserId = "guest";
-      const userIdentifier = request.user?._id || request.user?.id;
-
-      if (userIdentifier) {
-        determinedUserId = userIdentifier.toString();
-      }
+      const determinedUserId = request.user?._id?.toString() || "guest";
+      
+      logInfo('PDF upload initiated', {
+        userId: determinedUserId,
+        filename: request.file.originalname,
+        size: request.file.size,
+      });
 
       // NO LONGER NEEDED: Filename generation is now only for metadata
       // const filename =
@@ -66,42 +89,86 @@ export const createPdfUploadRouter = (conn) => {
       const fileBuffer = request.file.buffer;
 
       try {
+        // Validate file size (double-check despite multer limit)
+        if (fileBuffer.length > FILE_UPLOAD.MAX_SIZE) {
+          return response.status(HTTP_STATUS.BAD_REQUEST).json({
+            message: ERROR_MESSAGES.FILE_TOO_LARGE,
+          });
+        }
+
         // 1. Store the file content
         const contentResult = await contentsCollection.insertOne({
-          data: fileBuffer, // MongoDB stores the buffer as BinData
-          // Optional: You could store a generated filename here, but _id is the primary key
+          data: fileBuffer,
+          uploadDate: new Date(),
         });
-        const pdfContentId = contentResult.insertedId; // This is the ID of the file content
+        const pdfContentId = contentResult.insertedId;
 
         // 2. Store the file metadata, linked to the content
         const metadataDoc = {
-          pdfContentId: pdfContentId, // Link to the content collection
+          pdfContentId: pdfContentId,
           userId: determinedUserId,
           originalName: request.file.originalname,
-          mimeType: request.file.mimetype, // Stored as contentType in GridFS, using mimeType here
+          mimeType: request.file.mimetype,
           size: request.file.size,
           uploadDate: new Date(),
         };
 
         const metadataResult = await metadataCollection.insertOne(metadataDoc);
-        const fileId = metadataResult.insertedId; // This is the ID of the metadata document
+        const fileId = metadataResult.insertedId;
 
-        response.status(201).json({
-          message: "PDF file uploaded successfully.",
-          // Return the metadata ID for lookups, as it's the primary way to reference the file externally
+        logInfo('PDF uploaded successfully', {
+          fileId: fileId.toString(),
+          userId: determinedUserId,
+          filename: request.file.originalname,
+          size: request.file.size,
+        });
+
+        response.status(HTTP_STATUS.CREATED).json({
+          message: SUCCESS_MESSAGES.FILE_UPLOADED,
           fileId: fileId,
           pdfContentId: pdfContentId,
           filename: request.file.originalname,
         });
       } catch (error) {
-        // You should add logic here to clean up the pdf_contents entry if the pdf_metadata insert fails.
-        console.error("Error during file storage:", error);
+        logError('Error during file storage', error, {
+          userId: determinedUserId,
+          filename: request.file?.originalname,
+        });
+        
+        // Attempt cleanup if metadata insert failed
+        if (error.message.includes('metadata')) {
+          try {
+            await contentsCollection.deleteOne({ _id: pdfContentId });
+          } catch (cleanupError) {
+            logError('Failed to cleanup orphaned file content', cleanupError);
+          }
+        }
+        
         next(error);
       }
     },
-    // Error middleware remains the same
     (error, request, response, next) => {
-      // ... (Error handling logic remains unchanged) ...
+      if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+          return response.status(HTTP_STATUS.BAD_REQUEST).json({
+            message: ERROR_MESSAGES.FILE_TOO_LARGE,
+          });
+        }
+        return response.status(HTTP_STATUS.BAD_REQUEST).json({
+          message: `File upload error: ${error.message}`,
+        });
+      }
+      
+      if (error.message === ERROR_MESSAGES.INVALID_FILE_TYPE) {
+        return response.status(HTTP_STATUS.BAD_REQUEST).json({
+          message: ERROR_MESSAGES.INVALID_FILE_TYPE,
+        });
+      }
+      
+      logError('Unhandled PDF upload error', error);
+      response.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        message: ERROR_MESSAGES.FILE_UPLOAD_FAILED,
+      });
     }
   );
 

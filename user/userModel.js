@@ -1,6 +1,7 @@
 import mongoose, { Schema, model } from "mongoose";
 import validator from "validator";
 import bcrypt from "bcrypt";
+import { VALIDATION } from "../constants/index.js";
 
 const userSchema = new Schema(
   {
@@ -9,19 +10,21 @@ const userSchema = new Schema(
       required: true,
       unique: true,
       trim: true,
-      minlength: 3,
-      maxlength: 50,
+      minlength: VALIDATION.USERNAME.MIN_LENGTH,
+      maxlength: VALIDATION.USERNAME.MAX_LENGTH,
     },
     password: {
       type: String,
       required: true,
-      minlength: 8,
+      minlength: VALIDATION.PASSWORD.MIN_LENGTH,
+      // Note: No maxlength here because hashed passwords will be longer
       select: false, 
     },
     role: {
-      type: mongoose.Schema.Types.ObjectId, // Use ObjectId
-      ref: 'Role', // Reference your Role model
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Role', 
       required: true,
+      index: true,
     },
     email: {
       type: String,
@@ -57,6 +60,7 @@ const userSchema = new Schema(
       type: String,
       trim: true,
       required: [true, "Ministry is required for the user"],
+      index: true,
     },
     // Array of permission keys required to see and access this Folder/card
     requiredPermissions: {
@@ -70,6 +74,11 @@ const userSchema = new Schema(
     timestamps: true,
   }
 );
+
+// Additional indexes for better query performance
+// Note: username, email, role, and ministry already have index: true in field definition
+userSchema.index({ isActive: 1 });
+userSchema.index({ createdAt: -1 });
 
 // Pre-save hook to hash password
 userSchema.pre("save", async function (next) {
@@ -88,6 +97,13 @@ userSchema.pre("save", async function (next) {
 // Method to compare passwords
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Method to get public user data (without sensitive info)
+userSchema.methods.toPublicJSON = function() {
+  const obj = this.toObject();
+  delete obj.password;
+  return obj;
 };
 
 export default model("User", userSchema);

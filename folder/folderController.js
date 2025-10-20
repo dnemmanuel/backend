@@ -160,18 +160,29 @@ export const getFoldersByGroup = async (req, res) => {
     }
 
     // 2. CONSTRUCT THE SECURE MONGODB QUERY
+    // Determine parentPath based on group
+    // - Root group (gosl-payroll): parentPath should be "/gosl-payroll"
+    // - Other groups: parentPath should be "/gosl-payroll/{group}"
+    let expectedParentPath;
+    if (group === 'gosl-payroll') {
+      expectedParentPath = '/gosl-payroll';
+    } else {
+      expectedParentPath = `/gosl-payroll/${group}`;
+    }
+    
     const query = {
       isActive: true,
-      group: group, // ✅ FIX 1: Query by the 'group' field using the URL parameter.
-      parentPath: "/", // ✅ FIX 2: Only show top-level folders (parentPath: '/') for the dashboard view.
+      group: group, // Query by the 'group' field using the URL parameter.
+      parentPath: expectedParentPath, // Only show top-level folders for this group
       requiredPermissions: { $in: userPermissionKeys },
     };
 
     console.log(`MongoDB Query for group '${group}': ${JSON.stringify(query)}`);
+    console.log(`Expected parentPath: ${expectedParentPath}`);
     console.log("--------------------------");
 
     // Find active, accessible folders that match the group
-    const folders = await Folder.find(query);
+    const folders = await Folder.find(query).sort({ sortOrder: 1 });
 
     res.status(200).json(folders);
   } catch (error) {
@@ -217,7 +228,7 @@ export const generateArchiveFolders = async (req, res) => {
  */
 export const getAllFolders = async (req, res) => {
   try {
-    const folders = await Folder.find({ isActive: true });
+    const folders = await Folder.find({ isActive: true }).sort({ sortOrder: 1 });
     res.status(200).json(folders);
   } catch (error) {
     console.error("Error fetching folders:", error);
@@ -231,7 +242,30 @@ export const getAllFolders = async (req, res) => {
  */
 export const getAllFoldersAdmin = async (req, res) => {
   try {
-    const folders = await Folder.find();
+    let folders = await Folder.find().sort({ sortOrder: 1, createdAt: 1 });
+    
+    // Check if any folders have undefined or null sortOrder
+    const needsInitialization = folders.some(f => f.sortOrder === undefined || f.sortOrder === null);
+    
+    if (needsInitialization) {
+      console.log("Initializing sortOrder for folders without it...");
+      
+      // Initialize sortOrder based on creation order
+      const updates = folders.map((folder, index) => {
+        if (folder.sortOrder === undefined || folder.sortOrder === null) {
+          return Folder.findByIdAndUpdate(
+            folder._id,
+            { sortOrder: index },
+            { new: true }
+          );
+        }
+        return Promise.resolve(folder);
+      });
+      
+      folders = await Promise.all(updates);
+      console.log(`Initialized sortOrder for ${folders.length} folders`);
+    }
+    
     res.status(200).json(folders);
   } catch (error) {
     console.error("Error fetching all folders (Admin):", error);
@@ -249,19 +283,30 @@ export const createFolder = async (req, res) => {
     name,
     page,
     group,
+    childGroup,
+    parentFolder,
+    parentPath,
     subtitle,
+    label,
+    ministryFilter,
     ministry,
     requiredPermissions,
     isActive,
     theme,
   } = req.body;
+  
+  // Debug logging
+  console.log('🆕 Creating new folder:');
+  console.log('  Name:', name);
+  console.log('  ParentFolder:', parentFolder);
+  console.log('  ParentFolder type:', typeof parentFolder);
+  console.log('  ParentFolder value:', JSON.stringify(parentFolder));
 
-  // 🛑 CRITICAL FIX: The error is here, checking for the wrong fields.
+  // Validate required fields
   if (!name || !page || !group) {
-    // <-- Check for the correct required fields: name, page, and group
     return res.status(400).json({
       message:
-        "Name, page, and group are mandatory fields for folder creation.", // <-- Corrected message
+        "Name, page, and group are mandatory fields for folder creation.",
     });
   }
 
@@ -269,12 +314,20 @@ export const createFolder = async (req, res) => {
   // even if it's an empty array, but the main error is the field names.
 
   try {
+    // Get the highest sortOrder to place new folder at the end
+    const highestFolder = await Folder.findOne().sort({ sortOrder: -1 }).select('sortOrder');
+    const nextSortOrder = (highestFolder?.sortOrder ?? -1) + 1;
+
     const newFolder = new Folder({
       name,
       page,
-      group, // Mandatory
-      // parentPath can be calculated if needed, or default to '/' (as per model)
+      group, // Mandatory - single group code
+      childGroup: childGroup || null, // Optional - single child group code
+      parentFolder: parentFolder || null, // Optional - reference to parent folder
+      parentPath: parentPath || '/', // Can be calculated or provided
       subtitle,
+      label,
+      ministryFilter,
       ministry,
       // Ensure requiredPermissions is an array, defaulting to an empty array if undefined/null
       requiredPermissions: Array.isArray(requiredPermissions)
@@ -282,10 +335,17 @@ export const createFolder = async (req, res) => {
         : [],
       isActive,
       theme,
+      sortOrder: nextSortOrder, // Auto-assign sortOrder
       createdBy: req.user._id, // Assumes user is authenticated and attached by verifyToken
     });
 
     const savedFolder = await newFolder.save();
+
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    const action = `Created folder card: ${savedFolder.name}`;
+    logSystemEvent(performedBy, performedByName, action);
 
     res.status(201).json({
       message: "Folder card created successfully.",
@@ -294,9 +354,16 @@ export const createFolder = async (req, res) => {
   } catch (error) {
     // Handle unique constraint errors (e.g., if name is duplicated)
     if (error.code === 11000) {
+      console.error('Duplicate folder error:', error.message);
+      console.error('Attempted to create:', { name, parentFolder });
+      
+      const location = parentFolder ? 'in this parent folder' : 'at the root level';
       return res
         .status(409)
-        .json({ message: "A folder with this name already exists." });
+        .json({ 
+          message: `A folder named "${name}" already exists ${location}. You can use the same name in a different parent folder.`,
+          details: { name, parentFolder }
+        });
     }
     console.error("Error creating folder:", error);
     res
@@ -398,15 +465,36 @@ export const getFoldersByParentPath = async (req, res) => {
   }
 
   try {
+    // Find if there's a parent folder at this path to check for childGroup
+    const parentFolder = await Folder.findOne({ page: parentPath });
+    
     // 2. CONSTRUCT THE SECURE MONGODB QUERY
     const query = {
       isActive: true,
       parentPath: parentPath,
-      // ✅ FIX: Use the $in operator against the requiredPermissions field
       requiredPermissions: { $in: userPermissionKeys },
     };
+    
+    // If parent folder has a childGroup, only show folders that belong to that group
+    if (parentFolder && parentFolder.childGroup) {
+      query.group = parentFolder.childGroup;
+      console.log(`Parent folder has childGroup: ${parentFolder.childGroup}, filtering by group`);
+    }
 
-    const folders = await Folder.find(query);
+    console.log(`Fetching folders with query:`, JSON.stringify(query));
+    const folders = await Folder.find(query).sort({ sortOrder: 1 });
+    console.log(`Found ${folders.length} folders for path ${parentPath}`);
+    
+    // Log each folder's critical fields for debugging
+    folders.forEach((folder, index) => {
+      console.log(`Folder ${index + 1} details:`, {
+        name: folder.name,
+        page: folder.page,
+        group: folder.group,
+        parentPath: folder.parentPath,
+        _id: folder._id
+      });
+    });
 
     res.status(200).json(folders);
   } catch (error) {
@@ -417,5 +505,54 @@ export const getFoldersByParentPath = async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to fetch folder cards by parent path." });
+  }
+};
+
+/**
+ * Bulk update sortOrder for multiple folders
+ * Expected body: { folders: [{ _id: '...', sortOrder: 0 }, { _id: '...', sortOrder: 1 }] }
+ */
+export const bulkUpdateSortOrder = async (req, res) => {
+  try {
+    const { folders } = req.body;
+
+    if (!Array.isArray(folders) || folders.length === 0) {
+      return res.status(400).json({ message: "Folders array is required." });
+    }
+
+    console.log(`Updating sortOrder for ${folders.length} folders`);
+
+    // Update each folder's sortOrder
+    const updatePromises = folders.map(async (folder) => {
+      console.log(`Updating folder ${folder._id} to sortOrder ${folder.sortOrder}`);
+      return await Folder.findByIdAndUpdate(
+        folder._id,
+        { sortOrder: folder.sortOrder },
+        { new: true }
+      );
+    });
+
+    const updatedFolders = await Promise.all(updatePromises);
+    console.log(`Successfully updated ${updatedFolders.length} folders`);
+
+    // Log the action
+    await logSystemEvent({
+      eventType: "folder_reorder",
+      eventCategory: "folder",
+      description: `User ${req.user.username} reordered ${folders.length} folders`,
+      performedBy: req.user._id,
+      performedByName: req.user.username,
+      metadata: {
+        folderCount: folders.length,
+      },
+    });
+
+    res.status(200).json({ 
+      message: "Folder order updated successfully.",
+      updatedCount: updatedFolders.length
+    });
+  } catch (error) {
+    console.error("Error updating folder sort order:", error);
+    res.status(500).json({ message: "Failed to update folder order." });
   }
 };

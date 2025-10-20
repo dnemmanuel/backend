@@ -43,13 +43,17 @@ export const createUser = async (req, res) => {
     });
 
     const savedUser = await newUser.save();
+    
+    // Populate role to get role name instead of ID
+    await savedUser.populate('role', 'name');
 
     // Correctly log the system event after the user has been saved
     const performedBy = req.user ? req.user._id : "System";
     const performedByName = req.user ? req.user.username : "Unknown";
-    const action = `Created new user: ${savedUser.username} with role ${savedUser.role}`;
+    const roleName = savedUser.role?.name || savedUser.role;
+    const action = `Created new user: ${savedUser.username} with role ${roleName}`;
 
-    logSystemEvent(performedBy, performedByName, action);
+    await logSystemEvent(performedBy, performedByName, action);
 
     // Respond with the saved user data, excluding the password
     res.status(201).json({
@@ -108,7 +112,7 @@ export const updateUser = async (req, res) => {
     const performedByName = req.user ? req.user.username : "Unknown";
     const action = `Updated user: ${updatedUser.username}`;
 
-    logSystemEvent(performedBy, performedByName, action);
+    await logSystemEvent(performedBy, performedByName, action);
 
     res.json({
       message: "User updated successfully",
@@ -131,18 +135,31 @@ export const updateUser = async (req, res) => {
  */
 export const deleteUser = async (req, res) => {
   try {
-    const deletedUser = await User.findByIdAndDelete(req.params.id);
-
-    if (!deletedUser) {
+    // First find the user to populate the role before deleting
+    const userToDelete = await User.findById(req.params.id).populate('role', 'name');
+    
+    if (!userToDelete) {
       return res.status(404).json({ message: "User not found." });
     }
+    
+    console.log('🔍 User role before delete:', userToDelete.role);
+    console.log('🔍 Role is object?', typeof userToDelete.role);
+    console.log('🔍 Role.name:', userToDelete.role?.name);
+    
+    // Now delete the user
+    const deletedUser = await User.findByIdAndDelete(req.params.id);
 
-    // Log the system event
+    // Log the system event with role name
     const performedBy = req.user ? req.user._id : "System";
     const performedByName = req.user ? req.user.username : "Unknown";
-    const action = `Deleted user: ${deletedUser.username} with role ${deletedUser.role}`;
+    const roleName = (typeof userToDelete.role === 'object' && userToDelete.role?.name) 
+      ? userToDelete.role.name 
+      : String(userToDelete.role);
+    const action = `Deleted user: ${deletedUser.username} with role ${roleName}`;
+    
+    console.log('📝 Logging event with role name:', roleName);
 
-    logSystemEvent(performedBy, performedByName, action);
+    await logSystemEvent(performedBy, performedByName, action);
 
     res.json({
       message: "User deleted successfully",

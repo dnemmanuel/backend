@@ -5,7 +5,8 @@ import {
   createFolder,
   updateFolder,
   deleteFolder,
-  getFoldersByGroup, // Ensure this is imported
+  getFoldersByGroup,
+  bulkUpdateSortOrder,
 } from "../folder/folderController.js";
 
 // The authMiddleware (verifyToken, authorise) is assumed to be handled
@@ -24,6 +25,13 @@ router.get("/", getAllFoldersAdmin);
  * Creates a new folder card.
  */
 router.post("/", createFolder);
+
+/**
+ * PUT /reorder
+ * Bulk update sortOrder for multiple folders
+ * IMPORTANT: Must be before /:id route to avoid matching "reorder" as an ID
+ */
+router.put("/reorder", bulkUpdateSortOrder);
 
 /**
  * PUT /:id

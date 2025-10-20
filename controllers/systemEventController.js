@@ -37,7 +37,7 @@ export const getSystemEvents = async (req, res) => {
     const totalEvents = await SystemEvent.countDocuments();
     const systemEvents = await SystemEvent.find()
       .populate('performedBy', 'username email role')
-      .sort({ createdAt: -1 }) // Use 'createdAt' for sorting
+      .sort({ timestamp: -1 }) // Sort by timestamp descending (most recent first)
       .skip(skip) // Skip documents for pagination
       .limit(limit); // Limit number of documents returned
 

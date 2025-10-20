@@ -26,5 +26,7 @@ const permissionSchema = new Schema({
   },
 }, { timestamps: true });
 
+// Note: key field already has unique: true which creates an index automatically
+
 const Permission = mongoose.model('Permission', permissionSchema);
 export default Permission;

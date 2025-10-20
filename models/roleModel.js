@@ -15,11 +15,13 @@ const roleSchema = new mongoose.Schema({
     trim: true,
     maxlength: 200,
   },
-  permissions: [{  // Add permissions field
+  permissions: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Permission'
   }],
-}, { timestamps: true }); // Add createdAt and updatedAt fields
+}, { timestamps: true });
+
+// Note: name field already has unique: true which creates an index automatically
 
 const Role = mongoose.model('Role', roleSchema);
 export default Role;

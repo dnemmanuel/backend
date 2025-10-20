@@ -1,5 +1,6 @@
 import Role from "../models/roleModel.js"; // Import the Role model
 import { validationResult } from "express-validator"; // Import validationResult
+import { logSystemEvent } from "./systemEventController.js";
 
 // Get all roles
 export const getAllRoles = async (req, res) => {
@@ -48,6 +49,12 @@ export const createRole = async (req, res) => {
     });
 
     await newRole.save();
+    
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    logSystemEvent(performedBy, performedByName, `Created role: ${newRole.name}`);
+    
     res.status(201).json(newRole);
   } catch (error) {
     console.error("Error creating role:", error);
@@ -75,6 +82,12 @@ export const updateRole = async (req, res) => {
     if (!updatedRole) {
       return res.status(404).json({ message: "Role not found" });
     }
+    
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    logSystemEvent(performedBy, performedByName, `Updated role: ${updatedRole.name}`);
+    
     res.json(updatedRole);
   } catch (error) {
     console.error("Error updating role:", error);
@@ -89,6 +102,12 @@ export const deleteRole = async (req, res) => {
     if (!deletedRole) {
       return res.status(404).json({ message: "Role not found" });
     }
+    
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    await logSystemEvent(performedBy, performedByName, `Deleted role: ${deletedRole.name}`);
+    
     res.json({ message: "Role deleted successfully" });
   } catch (error) {
     console.error("Error deleting role:", error);

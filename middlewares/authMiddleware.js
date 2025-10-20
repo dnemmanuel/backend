@@ -1,85 +1,97 @@
 import jwt from 'jsonwebtoken';
 import { Env } from '../helpers/env.js';
-import User from '../user/userModel.js'; // 💡 Import User model
+import User from '../user/userModel.js';
+import { logError, logWarn, logDebug } from '../utils/logger.js';
+import { ERROR_MESSAGES, HTTP_STATUS } from '../constants/index.js';
 
-export const verifyToken = async (req, res, next) => { // 💡 MUST be async
+export const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  console.log('Backend verifyToken: Incoming Authorization Header:', authHeader);
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.log('Backend verifyToken: No Authorization header or malformed.');
-    return res.status(401).json({ message: 'Unauthorized: No token provided' });
+    logWarn('Auth attempt without valid Authorization header', {
+      ip: req.ip,
+      path: req.path,
+    });
+    return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+      message: ERROR_MESSAGES.UNAUTHORIZED 
+    });
   }
 
   const token = authHeader.split(' ')[1];
-  console.log('Backend verifyToken: Extracted Token:', token ? token.substring(0, 30) + '...' : 'None');
 
   if (!token) {
-    console.log('Backend verifyToken: Token is empty after splitting.');
-    return res.status(401).json({ message: 'Unauthorized: Token is malformed' });
+    logWarn('Auth header present but token empty', { ip: req.ip });
+    return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+      message: ERROR_MESSAGES.TOKEN_INVALID 
+    });
   }
 
   const jwtSecret = Env.get('JWT_SECRET');
-  console.log('Backend verifyToken: JWT_SECRET being used:', jwtSecret);
   if (!jwtSecret) {
-    console.error('Backend verifyToken: ERROR: JWT_SECRET is undefined or empty!');
-    return res.status(500).json({ message: 'Server configuration error: JWT Secret missing.' });
+    logError('JWT_SECRET is not configured');
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ 
+      message: ERROR_MESSAGES.CONFIG_ERROR 
+    });
   }
 
   try {
     const decoded = jwt.verify(token, jwtSecret);
-    // 💡 FIX 1: Log the correct property name to verify the ID extraction
-    console.log('Backend verifyToken: Decoded Token Payload (User ID):', decoded._id); 
+    
+    logDebug('Token verified successfully', { userId: decoded._id });
 
-    // 🛑 CRITICAL FIX 2: Ensure the Mongoose query uses the correct payload property: decoded._id
     const user = await User.findById(decoded._id)
         .populate({
             path: 'role',
             populate: {
                 path: 'permissions',
-                select: 'key' // We only need the key to perform authorization checks
+                select: 'key'
             }
         })
-        .select('-password'); // Exclude password
+        .select('-password');
         
     if (!user) {
-        // This should now only trigger if the user was deleted but the token is still valid.
-        return res.status(401).json({ message: 'Unauthorized: User associated with token not found.' });
+        logWarn('Valid token but user not found', { userId: decoded._id });
+        return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+          message: ERROR_MESSAGES.USER_NOT_FOUND 
+        });
     }
     
-    // Attach the fully populated user (including role and permissions) to the request
-    req.user = user; 
-
-    console.log('Backend verifyToken: User Object Permissions after Population:', 
-      user?.role?.permissions ? 
-          user.role.permissions.map(p => p.key) : 
-          'Permissions structure missing/empty'
-  );
+    if (!user.isActive) {
+        logWarn('Inactive user attempted access', { userId: user._id });
+        return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+          message: ERROR_MESSAGES.USER_INACTIVE 
+        });
+    }
+    
+    req.user = user;
+    
+    logDebug('User authenticated successfully', {
+      userId: user._id,
+      role: user.role?.name,
+      permissionsCount: user.role?.permissions?.length || 0,
+    });
     
     next();
   } catch (err) {
-    // 🛑 NEW DEBUG LOGGING: CHECK THE EXCEPTION
-    console.error('Backend verifyToken: Mongoose Query/Token verification failed:', err.message, err); 
+    logError('Token verification failed', err, {
+      ip: req.ip,
+      path: req.path,
+    });
     
     if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: 'Unauthorized: Token expired' });
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+        message: ERROR_MESSAGES.TOKEN_EXPIRED 
+      });
     }
-    // Handle case where JWT is invalid or Mongoose population failed
-    return res.status(401).json({ message: 'Unauthorized: Invalid token' });
+    
+    if (err.name === 'JsonWebTokenError') {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+        message: ERROR_MESSAGES.TOKEN_INVALID 
+      });
+    }
+    
+    return res.status(HTTP_STATUS.UNAUTHORIZED).json({ 
+      message: ERROR_MESSAGES.TOKEN_INVALID 
+    });
   }
-};
- 
-export const authorise = (roles) => {
-// ... (The old authorise logic is now obsolete and should be replaced by checkPermission)
-// For safety, you should remove this function entirely once you've replaced all its uses.
-  console.log('Backend authorise: Middleware active. ⚠️ This function is deprecated! Use checkPermission.');
-  return (req, res, next) => {
-    console.log('Backend authorise: User role from token:', req.user ? req.user.role : 'N/A');
-    console.log('Backend authorise: Required roles:', roles);
-    if (!req.user || !roles.includes(req.user.role)) {
-      console.log('Backend authorise: Authorization failed for role:', req.user ? req.user.role : 'N/A');
-      return res.status(403).json({ message: 'Forbidden: Access denied for this role.' });
-    }
-    next();
-  };
 };

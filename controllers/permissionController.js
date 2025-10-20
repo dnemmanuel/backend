@@ -1,6 +1,7 @@
 import Permission from "../models/permissionModel.js";
 import Role from "../models/roleModel.js"; // 👈 NEW: Import the Role model
 import { validationResult } from "express-validator";
+import { logSystemEvent } from "./systemEventController.js";
 
 // GET: Get all permissions (no change)
 export const getAllPermissions = async (req, res) => {
@@ -41,6 +42,12 @@ export const createPermission = async (req, res) => {
 
     const newPermission = new Permission({ key, name, description });
     await newPermission.save();
+    
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    logSystemEvent(performedBy, performedByName, `Created permission: ${newPermission.name} (${newPermission.key})`);
+    
     res.status(201).json(newPermission);
   } catch (error) {
     console.error("Error creating permission:", error);
@@ -79,6 +86,12 @@ export const updatePermission = async (req, res) => {
     if (!updatedPermission) {
       return res.status(404).json({ message: "Permission not found" });
     }
+    
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    logSystemEvent(performedBy, performedByName, `Updated permission: ${updatedPermission.name} (${updatedPermission.key})`);
+    
     res.json(updatedPermission);
   } catch (error) {
     console.error("Error updating permission:", error);
@@ -109,6 +122,11 @@ export const deletePermission = async (req, res) => {
       `Permission ${permissionId} removed from ${updateResult.modifiedCount} role(s).`
     );
 
+    // Log system event
+    const performedBy = req.user ? req.user._id : "System";
+    const performedByName = req.user ? req.user.username : "System";
+    logSystemEvent(performedBy, performedByName, `Deleted permission: ${deletedPermission.name} (${deletedPermission.key}) - removed from ${updateResult.modifiedCount} role(s)`);
+    
     res.json({
       message:
         "Permission deleted successfully and removed from all associated roles.",

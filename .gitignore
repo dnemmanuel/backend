@@ -5,3 +5,6 @@ node_modules
 tmp
 uploads
 .code-workspace
+logs/*.log
+logs/error.log
+logs/combined.log

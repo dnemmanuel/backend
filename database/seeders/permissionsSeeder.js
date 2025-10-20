@@ -111,7 +111,7 @@ const initialPermissions = [
     description: "Allows management (CRUD) access to AGD Finance folders.",
   },
   {
-    key: "view_Archives",
+    key: "view_archives",
     name: "View Archives",
     description: "Allows viewing access to payroll archived folders and files.",
   },
