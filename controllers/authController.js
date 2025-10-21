@@ -9,7 +9,7 @@ export const login = async (req, res) => {
     const { username, password } = req.body;
 
     // Find the user by username, and select the password and name fields
-    const appUser = await User.findOne({ username }).select("+password username role firstName lastName");
+    const appUser = await User.findOne({ username }).select("+password username role firstName lastName ministry");
 
     if (!appUser) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -74,6 +74,7 @@ export const login = async (req, res) => {
       username: appUser.username, // Include username
       firstName: appUser.firstName, // Include first name
       lastName: appUser.lastName, // Include last name
+      ministry: appUser.ministry, // 💡 Include ministry
       permissions: permissionsKeys, // 💡 NEW: Include the permissions array
     });
   } catch (error) {

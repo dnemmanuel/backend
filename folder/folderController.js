@@ -136,26 +136,35 @@ export const getFoldersByGroup = async (req, res) => {
   // Normalize permissions to an array of strings for the MongoDB query.
   if (
     userPermissionKeys.length > 0 &&
-    typeof userPermissionKeys[0] !== "string" &&
-    userPermissionKeys[0].key
+    typeof userPermissionKeys[0] !== "string"
   ) {
-    userPermissionKeys = userPermissionKeys.map((p) => p.key);
+    if (userPermissionKeys[0].key) {
+      userPermissionKeys = userPermissionKeys.map((p) => p.key);
+    } else {
+      console.warn('Permissions are ObjectIds (not populated). Cannot filter folders by permissions.');
+      userPermissionKeys = [];
+    }
   } else if (!Array.isArray(userPermissionKeys)) {
     userPermissionKeys = [];
   }
+  
+  const isSuperAdmin = req.user.role?.name === 's-admin';
+  
   console.log(
     `User Permissions FINAL CHECK (used in query): ${JSON.stringify(
       userPermissionKeys
     )}`
   );
   console.log("--- FOLDER FETCH DEBUG ---");
+  console.log(`User Role: ${req.user.role?.name}`);
+  console.log(`Is Super Admin: ${isSuperAdmin}`);
   console.log(
     `User Permissions (Normalized): ${userPermissionKeys.join(", ")}`
   );
 
   try {
-    // 1. Security Check: If the user has no permissions, return no folders.
-    if (userPermissionKeys.length === 0) {
+    // 1. Security Check: If the user has no permissions and is not s-admin, return no folders.
+    if (userPermissionKeys.length === 0 && !isSuperAdmin) {
       return res.status(200).json([]);
     }
 
@@ -174,8 +183,12 @@ export const getFoldersByGroup = async (req, res) => {
       isActive: true,
       group: group, // Query by the 'group' field using the URL parameter.
       parentPath: expectedParentPath, // Only show top-level folders for this group
-      requiredPermissions: { $in: userPermissionKeys },
     };
+    
+    // Only filter by permissions if user is not s-admin
+    if (!isSuperAdmin) {
+      query.requiredPermissions = { $in: userPermissionKeys };
+    }
 
     console.log(`MongoDB Query for group '${group}': ${JSON.stringify(query)}`);
     console.log(`Expected parentPath: ${expectedParentPath}`);
@@ -450,10 +463,17 @@ export const getFoldersByParentPath = async (req, res) => {
   // Normalize permissions to an array of strings
   if (
     userPermissionKeys.length > 0 &&
-    typeof userPermissionKeys[0] !== "string" &&
-    userPermissionKeys[0].key
+    typeof userPermissionKeys[0] !== "string"
   ) {
-    userPermissionKeys = userPermissionKeys.map((p) => p.key);
+    // If permissions are objects with .key property
+    if (userPermissionKeys[0].key) {
+      userPermissionKeys = userPermissionKeys.map((p) => p.key);
+    } else {
+      // If permissions are ObjectIds (not populated), we can't filter by them
+      // Set to empty array to show no folders OR bypass permission check for super admins
+      console.warn('Permissions are ObjectIds (not populated). Cannot filter folders by permissions.');
+      userPermissionKeys = [];
+    }
   } else if (!Array.isArray(userPermissionKeys)) {
     userPermissionKeys = [];
   }
@@ -472,8 +492,17 @@ export const getFoldersByParentPath = async (req, res) => {
     const query = {
       isActive: true,
       parentPath: parentPath,
-      requiredPermissions: { $in: userPermissionKeys },
     };
+    
+    // Only filter by permissions if user is not s-admin and has permissions
+    const isSuperAdmin = req.user.role?.name === 's-admin';
+    if (!isSuperAdmin && userPermissionKeys.length > 0) {
+      query.requiredPermissions = { $in: userPermissionKeys };
+    } else if (!isSuperAdmin) {
+      // User has no permissions and is not s-admin, show no folders
+      query.requiredPermissions = { $in: [] };
+    }
+    // If s-admin, no permission filter is applied (shows all folders)
     
     // If parent folder has a childGroup, only show folders that belong to that group
     if (parentFolder && parentFolder.childGroup) {
@@ -505,6 +534,38 @@ export const getFoldersByParentPath = async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to fetch folder cards by parent path." });
+  }
+};
+
+/**
+ * Get a single folder by its exact page path
+ * Expected API call: /api/folders/by-path?path=/path/to/folder
+ */
+export const getFolderByPath = async (req, res) => {
+  const path = req.query.path;
+
+  if (!path) {
+    return res.status(400).json({ message: "Path query parameter is required." });
+  }
+
+  try {
+    console.log(`Fetching folder by path: ${path}`);
+
+    // Find folder by exact page match
+    const folder = await Folder.findOne({ 
+      page: path,
+      isActive: true 
+    });
+
+    if (!folder) {
+      return res.status(404).json({ message: "Folder not found at this path." });
+    }
+
+    console.log(`✅ Found folder: ${folder.name} (${folder._id})`);
+    res.status(200).json(folder);
+  } catch (error) {
+    console.error(`Error fetching folder by path '${path}':`, error);
+    res.status(500).json({ message: "Failed to fetch folder by path." });
   }
 };
 

@@ -32,6 +32,7 @@ import permissionRoutes from "./routes/permissionRoutes.js";
 import groupRoutes from "./routes/groupRoutes.js";
 import folderRoutes from "./folder/folderRoutes.js";
 import folderReadRoutes from "./folder/folderReadRoutes.js";
+import submissionRoutes from "./submission/submissionRoutes.js";
 import { createUser } from "./user/userController.js";
 import { getSystemEvents, logSystemEvent } from "./controllers/systemEventController.js";
 
@@ -196,6 +197,9 @@ connectDB()
 
     // Folder Read Route (Accessible to all authenticated users for reading)
     app.use("/api/folders", verifyToken, folderReadRoutes);
+
+    // Submission Routes (Form submissions and workflow)
+    app.use("/api/submissions", submissionRoutes);
 
     // Group Management Routes
     app.use(
